@@ -274,7 +274,30 @@ contract RushMaster is IERC20Unlocker, ReentrancyGuard {
         }
     }
 
-    function unlock(IERC20Lockable[] calldata stakeTokens) external {}
+    /// @notice Unlocks a list of stake tokens that msg.sender has locked.
+    /// A stake token is ignored if the user didn't unstake it from all RushPools
+    /// or if this contract is not the msg.sender's unlocker.
+    /// @param stakeTokens The list of stake tokens to unlock.
+    function unlock(IERC20Lockable[] calldata stakeTokens) external nonReentrant {
+        for (uint256 i; i < stakeTokens.length; i++) {
+            // pool count should be 0
+            if (userPoolCounts[msg.sender][stakeTokens[i]] != 0) {
+                continue;
+            }
+
+            // address(this) should be the unlocker of msg.sender
+            // and msg.sender should be locked
+            if (
+                stakeTokens[i].unlockerOf(msg.sender) != IERC20Unlocker(address(this))
+                    || !stakeTokens[i].isLocked(msg.sender)
+            ) {
+                continue;
+            }
+
+            // unlock stake token
+            stakeTokens[i].unlock(msg.sender);
+        }
+    }
 
     /// @notice Claims accrued incentives for a list of RushPools that msg.sender has staked in.
     /// @param params The list of RushPools to claim the incentives for and the incentive tokens to claim.

@@ -1,6 +1,7 @@
 [profile.default]
 optimizer_runs = 1000000
 verbosity = 1
+solc_version = "0.8.27"
 
 # Extreme Fuzzing CI Profile :P
 [profile.ci]
