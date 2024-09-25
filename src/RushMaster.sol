@@ -27,8 +27,8 @@ struct LockCallbackData {
 }
 
 struct ClaimParams {
-    RushPoolKey key;
-    ERC20[] incentiveTokens;
+    ERC20 incentiveToken;
+    RushPoolKey[] keys;
 }
 
 contract RushMaster is IERC20Unlocker, ReentrancyGuard {
@@ -127,37 +127,41 @@ contract RushMaster is IERC20Unlocker, ReentrancyGuard {
     /// @param recipient The address that will receive the refunded incentive tokens.
     function refundIncentive(ClaimParams[] calldata params, address recipient) external nonReentrant {
         for (uint256 i; i < params.length; i++) {
-            // the program should be over
-            if (block.timestamp > params[i].key.startTimestamp + params[i].key.programLength) {
-                continue;
-            }
+            ERC20 incentiveToken = params[i].incentiveToken;
+            uint256 totalRefundAmount;
+            for (uint256 j; j < params[i].keys.length; j++) {
+                // the program should be over
+                RushPoolKey calldata key = params[i].keys[j];
+                if (block.timestamp > key.startTimestamp + key.programLength) {
+                    continue;
+                }
 
-            RushPoolId id = params[i].key.toId();
-            StakeState memory poolState = poolStates[id];
-            uint256 stakeXTimeUpdated = _computeStakeXTime(
-                params[i].key,
-                poolState.stakeXTimeStored,
-                poolState.stakeAmount,
-                poolState.lastStakeAmountUpdateTimestamp
-            );
-            for (uint256 j; j < params[i].incentiveTokens.length; j++) {
-                ERC20 incentiveToken = params[i].incentiveTokens[j];
+                // load state
+                RushPoolId id = key.toId();
+                StakeState memory poolState = poolStates[id];
                 uint256 incentiveAmount = incentiveDeposits[id][incentiveToken][msg.sender]; // the incentives added by msg.sender
                 if (incentiveAmount == 0) {
                     continue;
                 }
 
+                // compute refund amount
                 // refund amount is the provided incentive amount minus the reward paid to stakers
+                uint256 stakeXTimeUpdated = _computeStakeXTime(
+                    key, poolState.stakeXTimeStored, poolState.stakeAmount, poolState.lastStakeAmountUpdateTimestamp
+                );
                 uint256 rewardAccured = incentiveAmount.mulDiv(stakeXTimeUpdated, PRECISION);
                 uint256 refundAmount = incentiveAmount - rewardAccured;
 
                 // delete incentive deposit to mark the incentive as refunded
                 delete incentiveDeposits[id][incentiveToken][msg.sender];
 
-                // transfer refund amount to recipient
-                if (refundAmount != 0) {
-                    address(incentiveToken).safeTransfer(recipient, refundAmount);
-                }
+                // accumulate refund amount
+                totalRefundAmount += refundAmount;
+            }
+
+            // transfer refund amount to recipient
+            if (totalRefundAmount != 0) {
+                address(incentiveToken).safeTransfer(recipient, totalRefundAmount);
             }
         }
     }
@@ -313,28 +317,34 @@ contract RushMaster is IERC20Unlocker, ReentrancyGuard {
     /// @param recipient The address that will receive the claimed incentive tokens.
     function claim(ClaimParams[] calldata params, address recipient) external nonReentrant {
         for (uint256 i; i < params.length; i++) {
-            RushPoolId id = params[i].key.toId();
-            StakeState memory userState = userStates[id][msg.sender];
-            uint256 stakeXTimeUpdated = _computeStakeXTime(
-                params[i].key,
-                userState.stakeXTimeStored,
-                userState.stakeAmount,
-                userState.lastStakeAmountUpdateTimestamp
-            );
+            ERC20 incentiveToken = params[i].incentiveToken;
+            uint256 totalClaimableAmount;
 
-            for (uint256 j; j < params[i].incentiveTokens.length; j++) {
-                // compute reward
-                ERC20 incentiveToken = params[i].incentiveTokens[j];
+            for (uint256 j; j < params[i].keys.length; j++) {
+                // load state
+                RushPoolKey calldata key = params[i].keys[j];
+                RushPoolId id = key.toId();
+                StakeState memory userState = userStates[id][msg.sender];
                 uint256 incentiveAmount = incentiveAmounts[id][incentiveToken];
                 uint256 rewardPaid = userRewardPaid[id][msg.sender][incentiveToken];
+
+                // compute claimable reward
+                uint256 stakeXTimeUpdated = _computeStakeXTime(
+                    key, userState.stakeXTimeStored, userState.stakeAmount, userState.lastStakeAmountUpdateTimestamp
+                );
                 uint256 rewardAccured = incentiveAmount.mulDiv(stakeXTimeUpdated, PRECISION);
                 uint256 claimableReward = rewardAccured - rewardPaid;
 
                 // update claim state
                 userRewardPaid[id][msg.sender][incentiveToken] = rewardAccured;
 
-                // transfer incentive tokens to user
-                address(incentiveToken).safeTransfer(recipient, claimableReward);
+                // accumulate claimable reward
+                totalClaimableAmount += claimableReward;
+            }
+
+            // transfer incentive tokens to user
+            if (totalClaimableAmount != 0) {
+                address(incentiveToken).safeTransfer(recipient, totalClaimableAmount);
             }
         }
     }
