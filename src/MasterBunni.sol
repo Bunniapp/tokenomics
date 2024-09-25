@@ -8,30 +8,11 @@ import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 import {RushPoolId} from "./types/RushPoolId.sol";
 import {RushPoolKey} from "./types/RushPoolKey.sol";
 import {ReentrancyGuard} from "./lib/ReentrancyGuard.sol";
+import {IMasterBunni} from "./interfaces/IMasterBunni.sol";
 import {IERC20Unlocker} from "./external/IERC20Unlocker.sol";
 import {IERC20Lockable} from "./external/IERC20Lockable.sol";
 
-struct IncentiveParams {
-    RushPoolKey key;
-    uint256 incentiveAmount;
-}
-
-struct StakeState {
-    uint256 stakeAmount;
-    uint256 stakeXTimeStored;
-    uint256 lastStakeAmountUpdateTimestamp;
-}
-
-struct LockCallbackData {
-    RushPoolKey[] keys;
-}
-
-struct ClaimParams {
-    ERC20 incentiveToken;
-    RushPoolKey[] keys;
-}
-
-contract RushMaster is IERC20Unlocker, ReentrancyGuard {
+contract MasterBunni is IMasterBunni, ReentrancyGuard {
     using FixedPointMathLib for *;
     using SafeTransferLib for address;
 
@@ -50,12 +31,7 @@ contract RushMaster is IERC20Unlocker, ReentrancyGuard {
     /// Incentivizer actions
     /// -----------------------------------------------------------------------
 
-    /// @notice Deposits an incentive token to a list of RushPools. Should be called before the RushPools are active.
-    /// If one of the RushPools is already active, the incentive will not be pulled from the caller or deposited into the RushPool.
-    /// @param params The list of RushPools to deposit the incentive into and the amount to deposit.
-    /// @param incentiveToken The incentive token to deposit.
-    /// @param recipient The address that will receive the right to withdraw the incentive tokens.
-    /// @return totalIncentiveAmount The total amount of incentive tokens deposited.
+    /// @inheritdoc IMasterBunni
     function depositIncentive(IncentiveParams[] calldata params, ERC20 incentiveToken, address recipient)
         external
         nonReentrant
@@ -86,12 +62,7 @@ contract RushMaster is IERC20Unlocker, ReentrancyGuard {
         }
     }
 
-    /// @notice Withdraws an incentive token from a list of RushPools. Should be called before the RushPools are active.
-    /// If one of the RushPools is already active, the corresponding incentive will not be withdrawn from.
-    /// @param params The list of RushPools to withdraw the incentive from and the amount to withdraw.
-    /// @param incentiveToken The incentive token to withdraw.
-    /// @param recipient The address that will receive the withdrawn incentive tokens.
-    /// @return totalWithdrawnAmount The total amount of incentive tokens withdrawn.
+    /// @inheritdoc IMasterBunni
     function withdrawIncentive(IncentiveParams[] calldata params, ERC20 incentiveToken, address recipient)
         external
         nonReentrant
@@ -122,9 +93,7 @@ contract RushMaster is IERC20Unlocker, ReentrancyGuard {
         }
     }
 
-    /// @notice Refund unused incentive tokens deposited by msg.sender. Should be called after the RushPools are over.
-    /// @param params The list of RushPools to refund the incentive into and the incentive tokens to refund.
-    /// @param recipient The address that will receive the refunded incentive tokens.
+    /// @inheritdoc IMasterBunni
     function refundIncentive(ClaimParams[] calldata params, address recipient) external nonReentrant {
         for (uint256 i; i < params.length; i++) {
             ERC20 incentiveToken = params[i].incentiveToken;
@@ -170,9 +139,7 @@ contract RushMaster is IERC20Unlocker, ReentrancyGuard {
     /// Staker actions
     /// -----------------------------------------------------------------------
 
-    /// @notice Joins a list of RushPools. Can join a pool where the user has existing stake if more capacity has opened up.
-    /// msg.sender should already have locked the stake tokens before calling this function.
-    /// @param keys The list of RushPools to join.
+    /// @inheritdoc IMasterBunni
     function join(RushPoolKey[] calldata keys) external nonReentrant {
         for (uint256 i; i < keys.length; i++) {
             // pool needs to be active
@@ -244,8 +211,7 @@ contract RushMaster is IERC20Unlocker, ReentrancyGuard {
         }
     }
 
-    /// @notice Exits a list of RushPools.
-    /// @param keys The list of RushPools to exit.
+    /// @inheritdoc IMasterBunni
     function exit(RushPoolKey[] calldata keys) external nonReentrant {
         for (uint256 i; i < keys.length; i++) {
             // should be past pool's start timestamp
@@ -287,10 +253,7 @@ contract RushMaster is IERC20Unlocker, ReentrancyGuard {
         }
     }
 
-    /// @notice Unlocks a list of stake tokens that msg.sender has locked.
-    /// A stake token is ignored if the user didn't unstake it from all RushPools
-    /// or if this contract is not the msg.sender's unlocker.
-    /// @param stakeTokens The list of stake tokens to unlock.
+    /// @inheritdoc IMasterBunni
     function unlock(IERC20Lockable[] calldata stakeTokens) external nonReentrant {
         for (uint256 i; i < stakeTokens.length; i++) {
             // pool count should be 0
@@ -312,9 +275,7 @@ contract RushMaster is IERC20Unlocker, ReentrancyGuard {
         }
     }
 
-    /// @notice Claims accrued incentives for a list of RushPools that msg.sender has staked in.
-    /// @param params The list of RushPools to claim the incentives for and the incentive tokens to claim.
-    /// @param recipient The address that will receive the claimed incentive tokens.
+    /// @inheritdoc IMasterBunni
     function claim(ClaimParams[] calldata params, address recipient) external nonReentrant {
         for (uint256 i; i < params.length; i++) {
             ERC20 incentiveToken = params[i].incentiveToken;
