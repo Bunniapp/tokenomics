@@ -19,20 +19,20 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
     uint256 internal constant PRECISION = 1e30;
 
     mapping(RushPoolId id => StakeState) public poolStates;
-    mapping(RushPoolId id => mapping(ERC20 incentiveToken => uint256)) public incentiveAmounts;
-    mapping(RushPoolId id => mapping(ERC20 incentiveToken => mapping(address depositor => uint256))) public
+    mapping(RushPoolId id => mapping(address incentiveToken => uint256)) public incentiveAmounts;
+    mapping(RushPoolId id => mapping(address incentiveToken => mapping(address depositor => uint256))) public
         incentiveDeposits;
 
     mapping(RushPoolId id => mapping(address user => StakeState)) public userStates;
     mapping(address user => mapping(IERC20Lockable stakeToken => uint256)) public userPoolCounts;
-    mapping(RushPoolId id => mapping(address user => mapping(ERC20 incentiveToken => uint256))) public userRewardPaid;
+    mapping(RushPoolId id => mapping(address user => mapping(address incentiveToken => uint256))) public userRewardPaid;
 
     /// -----------------------------------------------------------------------
     /// Incentivizer actions
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IMasterBunni
-    function depositIncentive(IncentiveParams[] calldata params, ERC20 incentiveToken, address recipient)
+    function depositIncentive(IncentiveParams[] calldata params, address incentiveToken, address recipient)
         external
         nonReentrant
         returns (uint256 totalIncentiveAmount)
@@ -58,12 +58,12 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
         // transfer incentive tokens to this contract
         if (totalIncentiveAmount != 0) {
-            address(incentiveToken).safeTransferFrom(msg.sender, address(this), totalIncentiveAmount);
+            incentiveToken.safeTransferFrom(msg.sender, address(this), totalIncentiveAmount);
         }
     }
 
     /// @inheritdoc IMasterBunni
-    function withdrawIncentive(IncentiveParams[] calldata params, ERC20 incentiveToken, address recipient)
+    function withdrawIncentive(IncentiveParams[] calldata params, address incentiveToken, address recipient)
         external
         nonReentrant
         returns (uint256 totalWithdrawnAmount)
@@ -89,14 +89,14 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
         // transfer incentive tokens to recipient
         if (totalWithdrawnAmount != 0) {
-            address(incentiveToken).safeTransfer(recipient, totalWithdrawnAmount);
+            incentiveToken.safeTransfer(recipient, totalWithdrawnAmount);
         }
     }
 
     /// @inheritdoc IMasterBunni
     function refundIncentive(ClaimParams[] calldata params, address recipient) external nonReentrant {
         for (uint256 i; i < params.length; i++) {
-            ERC20 incentiveToken = params[i].incentiveToken;
+            address incentiveToken = params[i].incentiveToken;
             uint256 totalRefundAmount;
             for (uint256 j; j < params[i].keys.length; j++) {
                 // the program should be over
@@ -130,7 +130,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
             // transfer refund amount to recipient
             if (totalRefundAmount != 0) {
-                address(incentiveToken).safeTransfer(recipient, totalRefundAmount);
+                incentiveToken.safeTransfer(recipient, totalRefundAmount);
             }
         }
     }
@@ -164,7 +164,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             uint256 remainderStakeAmount = poolState.stakeAmount - userState.stakeAmount; // stake in pool minus the user's existing stake
             uint256 stakeAmountUpdated;
             {
-                uint256 balance = keys[i].stakeToken.balanceOf(msg.sender);
+                uint256 balance = ERC20(address(keys[i].stakeToken)).balanceOf(msg.sender);
                 stakeAmountUpdated = remainderStakeAmount + balance > keys[i].stakeCap
                     ? keys[i].stakeCap - remainderStakeAmount
                     : balance;
@@ -278,7 +278,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
     /// @inheritdoc IMasterBunni
     function claim(ClaimParams[] calldata params, address recipient) external nonReentrant {
         for (uint256 i; i < params.length; i++) {
-            ERC20 incentiveToken = params[i].incentiveToken;
+            address incentiveToken = params[i].incentiveToken;
             uint256 totalClaimableAmount;
 
             for (uint256 j; j < params[i].keys.length; j++) {
@@ -305,7 +305,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
             // transfer incentive tokens to user
             if (totalClaimableAmount != 0) {
-                address(incentiveToken).safeTransfer(recipient, totalClaimableAmount);
+                incentiveToken.safeTransfer(recipient, totalClaimableAmount);
             }
         }
     }

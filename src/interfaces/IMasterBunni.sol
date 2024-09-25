@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.4;
 
-import {ERC20} from "solady/tokens/ERC20.sol";
 import {RushPoolId} from "../types/RushPoolId.sol";
 import {RushPoolKey} from "../types/RushPoolKey.sol";
 import {IERC20Unlocker} from "../external/IERC20Unlocker.sol";
@@ -31,7 +30,7 @@ interface IMasterBunni is IERC20Unlocker {
     /// @member incentiveToken The incentive token to claim.
     /// @member keys The list of RushPools to claim the incentives for.
     struct ClaimParams {
-        ERC20 incentiveToken;
+        address incentiveToken;
         RushPoolKey[] keys;
     }
 
@@ -54,14 +53,14 @@ interface IMasterBunni is IERC20Unlocker {
     /// @param id The RushPoolId of the RushPool.
     /// @param incentiveToken The incentive token to check.
     /// @return The amount of incentive tokens deposited into the RushPool.
-    function incentiveAmounts(RushPoolId id, ERC20 incentiveToken) external view returns (uint256);
+    function incentiveAmounts(RushPoolId id, address incentiveToken) external view returns (uint256);
 
     /// @notice Returns the amount of incentive tokens deposited by an address into a RushPool.
     /// @param id The RushPoolId of the RushPool.
     /// @param incentiveToken The incentive token to check.
     /// @param depositor The address to check.
     /// @return The amount of incentive tokens deposited by the address into the RushPool.
-    function incentiveDeposits(RushPoolId id, ERC20 incentiveToken, address depositor)
+    function incentiveDeposits(RushPoolId id, address incentiveToken, address depositor)
         external
         view
         returns (uint256);
@@ -89,7 +88,7 @@ interface IMasterBunni is IERC20Unlocker {
     /// @param user The address of the user.
     /// @param incentiveToken The incentive token to check.
     /// @return The amount of incentive tokens claimed by the user in the RushPool.
-    function userRewardPaid(RushPoolId id, address user, ERC20 incentiveToken) external view returns (uint256);
+    function userRewardPaid(RushPoolId id, address user, address incentiveToken) external view returns (uint256);
 
     /// @notice Deposits an incentive token to a list of RushPools. Should be called before the RushPools are active.
     /// If one of the RushPools is already active, the incentive will not be pulled from the caller or deposited into the RushPool.
@@ -97,7 +96,7 @@ interface IMasterBunni is IERC20Unlocker {
     /// @param incentiveToken The incentive token to deposit.
     /// @param recipient The address that will receive the right to withdraw the incentive tokens.
     /// @return totalIncentiveAmount The total amount of incentive tokens deposited.
-    function depositIncentive(IncentiveParams[] calldata params, ERC20 incentiveToken, address recipient)
+    function depositIncentive(IncentiveParams[] calldata params, address incentiveToken, address recipient)
         external
         returns (uint256 totalIncentiveAmount);
 
@@ -107,7 +106,7 @@ interface IMasterBunni is IERC20Unlocker {
     /// @param incentiveToken The incentive token to withdraw.
     /// @param recipient The address that will receive the withdrawn incentive tokens.
     /// @return totalWithdrawnAmount The total amount of incentive tokens withdrawn.
-    function withdrawIncentive(IncentiveParams[] calldata params, ERC20 incentiveToken, address recipient)
+    function withdrawIncentive(IncentiveParams[] calldata params, address incentiveToken, address recipient)
         external
         returns (uint256 totalWithdrawnAmount);
 

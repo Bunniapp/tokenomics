@@ -3,14 +3,13 @@
 pragma solidity >=0.5.0;
 
 import "./IERC20Unlocker.sol";
-import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
 /// @title IERC20Lockable - Interface for a lockable token account.
 /// @notice A token holder can lock their account, preventing any transfers from the account.
 /// An unlocker contract is able to unlock the account. The unlocker contract is expected to
 /// implement the `IERC20Unlocker` interface.
 /// Used mainly for staking contracts that don't require transferring the token into the contract.
-interface IERC20Lockable is IERC20 {
+interface IERC20Lockable {
     event Lock(address indexed account, IERC20Unlocker indexed unlocker);
     event Unlock(address indexed account, IERC20Unlocker indexed unlocker);
 
