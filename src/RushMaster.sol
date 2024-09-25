@@ -7,6 +7,7 @@ import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import {RushPoolId} from "./types/RushPoolId.sol";
 import {RushPoolKey} from "./types/RushPoolKey.sol";
+import {ReentrancyGuard} from "./lib/ReentrancyGuard.sol";
 import {IERC20Unlocker} from "./external/IERC20Unlocker.sol";
 import {IERC20Lockable} from "./external/IERC20Lockable.sol";
 
@@ -30,7 +31,7 @@ struct ClaimParams {
     ERC20[] incentiveTokens;
 }
 
-contract RushMaster is IERC20Unlocker {
+contract RushMaster is IERC20Unlocker, ReentrancyGuard {
     using FixedPointMathLib for *;
     using SafeTransferLib for address;
 
@@ -57,6 +58,7 @@ contract RushMaster is IERC20Unlocker {
     /// @return totalIncentiveAmount The total amount of incentive tokens deposited.
     function depositIncentive(IncentiveParams[] calldata params, ERC20 incentiveToken, address recipient)
         external
+        nonReentrant
         returns (uint256 totalIncentiveAmount)
     {
         // record incentive in each pool
@@ -92,6 +94,7 @@ contract RushMaster is IERC20Unlocker {
     /// @return totalWithdrawnAmount The total amount of incentive tokens withdrawn.
     function withdrawIncentive(IncentiveParams[] calldata params, ERC20 incentiveToken, address recipient)
         external
+        nonReentrant
         returns (uint256 totalWithdrawnAmount)
     {
         // subtract incentive tokens from each pool
@@ -122,7 +125,7 @@ contract RushMaster is IERC20Unlocker {
     /// @notice Refund unused incentive tokens deposited by msg.sender. Should be called after the RushPools are over.
     /// @param params The list of RushPools to refund the incentive into and the incentive tokens to refund.
     /// @param recipient The address that will receive the refunded incentive tokens.
-    function refundIncentive(ClaimParams[] calldata params, address recipient) external {
+    function refundIncentive(ClaimParams[] calldata params, address recipient) external nonReentrant {
         for (uint256 i; i < params.length; i++) {
             // the program should be over
             if (block.timestamp > params[i].key.startTimestamp + params[i].key.programLength) {
@@ -228,11 +231,55 @@ contract RushMaster is IERC20Unlocker {
         }
     }
 
-    function exit(RushPoolKey[] calldata keys) external {}
+    /// @notice Exits a list of RushPools.
+    /// @param keys The list of RushPools to exit.
+    function exit(RushPoolKey[] calldata keys) external {
+        for (uint256 i; i < keys.length; i++) {
+            // should be past pool's start timestamp
+            if (block.timestamp < keys[i].startTimestamp) {
+                continue;
+            }
+
+            RushPoolId id = keys[i].toId();
+            StakeState memory userState = userStates[id][msg.sender];
+
+            // user should have staked in the pool
+            if (userState.stakeAmount == 0) {
+                continue;
+            }
+
+            // update user state
+            uint256 endTimestamp = keys[i].startTimestamp + keys[i].programLength;
+            uint256 latestActiveTimestamp = FixedPointMathLib.min(block.timestamp, endTimestamp);
+            uint256 userStakeXTimeUpdated = _computeStakeXTime(
+                keys[i], userState.stakeXTimeStored, userState.stakeAmount, userState.lastStakeAmountUpdateTimestamp
+            );
+            userStates[id][msg.sender] = StakeState({
+                stakeAmount: 0,
+                stakeXTimeStored: userStakeXTimeUpdated,
+                lastStakeAmountUpdateTimestamp: latestActiveTimestamp
+            });
+            --userPoolCounts[msg.sender][keys[i].stakeToken];
+
+            // update pool state
+            StakeState memory poolState = poolStates[id];
+            uint256 poolStakeXTimeUpdated = _computeStakeXTime(
+                keys[i], poolState.stakeXTimeStored, poolState.stakeAmount, poolState.lastStakeAmountUpdateTimestamp
+            );
+            poolStates[id] = StakeState({
+                stakeAmount: poolState.stakeAmount - userState.stakeAmount,
+                stakeXTimeStored: poolStakeXTimeUpdated,
+                lastStakeAmountUpdateTimestamp: latestActiveTimestamp
+            });
+        }
+    }
 
     function unlock(IERC20Lockable[] calldata stakeTokens) external {}
 
-    function claim(ClaimParams[] calldata params, address recipient) external {
+    /// @notice Claims accrued incentives for a list of RushPools that msg.sender has staked in.
+    /// @param params The list of RushPools to claim the incentives for and the incentive tokens to claim.
+    /// @param recipient The address that will receive the claimed incentive tokens.
+    function claim(ClaimParams[] calldata params, address recipient) external nonReentrant {
         for (uint256 i; i < params.length; i++) {
             RushPoolId id = params[i].key.toId();
             StakeState memory userState = userStates[id][msg.sender];
@@ -336,7 +383,7 @@ contract RushMaster is IERC20Unlocker {
     /// @param key The rush pool key.
     /// @param stakeXTimeStored The stake x time value stored in the state.
     /// @param stakeAmount The stake amount of the user between the last update and now.
-    /// @param lastStakeAmountUpdateTimestamp The timestamp of the last update. Never updated beyond the end timestamp of the program.
+    /// @param lastStakeAmountUpdateTimestamp The timestamp of the last update. Should be at most the end timestamp of the program.
     /// @return The updated stake x time value.
     function _computeStakeXTime(
         RushPoolKey memory key,
