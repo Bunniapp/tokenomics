@@ -167,13 +167,22 @@ contract RushMaster is IERC20Unlocker, ReentrancyGuard {
     /// -----------------------------------------------------------------------
 
     /// @notice Joins a list of RushPools. Can join a pool where the user has existing stake if more capacity has opened up.
+    /// msg.sender should already have locked the stake tokens before calling this function.
     /// @param keys The list of RushPools to join.
-    function join(RushPoolKey[] calldata keys) external {
+    function join(RushPoolKey[] calldata keys) external nonReentrant {
         for (uint256 i; i < keys.length; i++) {
             // pool needs to be active
             if (
                 block.timestamp < keys[i].startTimestamp
                     || block.timestamp > keys[i].startTimestamp + keys[i].programLength
+            ) {
+                continue;
+            }
+
+            // msg.sender should be locked with address(this) as the unlocker
+            if (
+                !keys[i].stakeToken.isLocked(msg.sender)
+                    || keys[i].stakeToken.unlockerOf(msg.sender) != IERC20Unlocker(address(this))
             ) {
                 continue;
             }
@@ -233,7 +242,7 @@ contract RushMaster is IERC20Unlocker, ReentrancyGuard {
 
     /// @notice Exits a list of RushPools.
     /// @param keys The list of RushPools to exit.
-    function exit(RushPoolKey[] calldata keys) external {
+    function exit(RushPoolKey[] calldata keys) external nonReentrant {
         for (uint256 i; i < keys.length; i++) {
             // should be past pool's start timestamp
             if (block.timestamp < keys[i].startTimestamp) {
@@ -336,7 +345,7 @@ contract RushMaster is IERC20Unlocker, ReentrancyGuard {
 
     /// @inheritdoc IERC20Unlocker
     /// @dev Should initialize the user's stake position.
-    function lockCallback(address account, uint256 balance, bytes calldata data) external {
+    function lockCallback(address account, uint256 balance, bytes calldata data) external nonReentrant {
         LockCallbackData memory callbackData = abi.decode(data, (LockCallbackData));
         IERC20Lockable stakeToken = IERC20Lockable(msg.sender);
 
