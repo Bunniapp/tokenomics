@@ -3,6 +3,8 @@ pragma solidity ^0.8.4;
 
 import "forge-std/console2.sol";
 
+import {LibMulticaller} from "multicaller/LibMulticaller.sol";
+
 import {ERC20} from "solady/tokens/ERC20.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
@@ -39,6 +41,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         nonReentrant
         returns (uint256 totalIncentiveAmount)
     {
+        address msgSender = LibMulticaller.senderOrSigner();
+
         // record incentive in each pool
         for (uint256 i; i < params.length; i++) {
             if (block.timestamp >= params[i].key.startTimestamp) {
@@ -60,7 +64,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
         // transfer incentive tokens to this contract
         if (totalIncentiveAmount != 0) {
-            incentiveToken.safeTransferFrom(msg.sender, address(this), totalIncentiveAmount);
+            incentiveToken.safeTransferFrom(msgSender, address(this), totalIncentiveAmount);
         }
     }
 
@@ -70,6 +74,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         nonReentrant
         returns (uint256 totalWithdrawnAmount)
     {
+        address msgSender = LibMulticaller.senderOrSigner();
+
         // subtract incentive tokens from each pool
         for (uint256 i; i < params.length; i++) {
             if (block.timestamp >= params[i].key.startTimestamp) {
@@ -86,7 +92,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             incentiveAmounts[id][incentiveToken] -= params[i].incentiveAmount;
 
             // subtract incentive from sender
-            incentiveDeposits[id][incentiveToken][msg.sender] -= params[i].incentiveAmount;
+            incentiveDeposits[id][incentiveToken][msgSender] -= params[i].incentiveAmount;
         }
 
         // transfer incentive tokens to recipient
@@ -97,6 +103,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
     /// @inheritdoc IMasterBunni
     function refundIncentive(ClaimParams[] calldata params, address recipient) external nonReentrant {
+        address msgSender = LibMulticaller.senderOrSigner();
+
         for (uint256 i; i < params.length; i++) {
             address incentiveToken = params[i].incentiveToken;
             uint256 totalRefundAmount;
@@ -110,7 +118,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 // load state
                 RushPoolId id = key.toId();
                 StakeState memory poolState = poolStates[id];
-                uint256 incentiveAmount = incentiveDeposits[id][incentiveToken][msg.sender]; // the incentives added by msg.sender
+                uint256 incentiveAmount = incentiveDeposits[id][incentiveToken][msgSender]; // the incentives added by msgSender
                 if (incentiveAmount == 0) {
                     continue;
                 }
@@ -124,7 +132,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 uint256 refundAmount = incentiveAmount - rewardAccrued;
 
                 // delete incentive deposit to mark the incentive as refunded
-                delete incentiveDeposits[id][incentiveToken][msg.sender];
+                delete incentiveDeposits[id][incentiveToken][msgSender];
 
                 // accumulate refund amount
                 totalRefundAmount += refundAmount;
@@ -143,6 +151,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
     /// @inheritdoc IMasterBunni
     function join(RushPoolKey[] calldata keys) external nonReentrant {
+        address msgSender = LibMulticaller.senderOrSigner();
+
         for (uint256 i; i < keys.length; i++) {
             // pool needs to be active
             if (
@@ -152,21 +162,21 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 continue;
             }
 
-            // msg.sender should be locked with address(this) as the unlocker
+            // msgSender should be locked with address(this) as the unlocker
             if (
-                !keys[i].stakeToken.isLocked(msg.sender)
-                    || keys[i].stakeToken.unlockerOf(msg.sender) != IERC20Unlocker(address(this))
+                !keys[i].stakeToken.isLocked(msgSender)
+                    || keys[i].stakeToken.unlockerOf(msgSender) != IERC20Unlocker(address(this))
             ) {
                 continue;
             }
 
             RushPoolId id = keys[i].toId();
-            StakeState memory userState = userStates[id][msg.sender];
+            StakeState memory userState = userStates[id][msgSender];
             StakeState memory poolState = poolStates[id];
             uint256 remainderStakeAmount = poolState.stakeAmount - userState.stakeAmount; // stake in pool minus the user's existing stake
             uint256 stakeAmountUpdated;
             {
-                uint256 balance = ERC20(address(keys[i].stakeToken)).balanceOf(msg.sender);
+                uint256 balance = ERC20(address(keys[i].stakeToken)).balanceOf(msgSender);
                 stakeAmountUpdated = remainderStakeAmount + balance > keys[i].stakeCap
                     ? keys[i].stakeCap - remainderStakeAmount
                     : balance;
@@ -186,14 +196,14 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             uint256 userStakeXTimeUpdated = _computeStakeXTime(
                 keys[i], userState.stakeXTimeStored, userState.stakeAmount, userState.lastStakeAmountUpdateTimestamp
             );
-            userStates[id][msg.sender] = StakeState({
+            userStates[id][msgSender] = StakeState({
                 stakeAmount: stakeAmountUpdated,
                 stakeXTimeStored: userStakeXTimeUpdated,
                 lastStakeAmountUpdateTimestamp: block.timestamp
             });
             if (userState.stakeAmount == 0) {
                 // user didn't have any stake in this pool before
-                ++userPoolCounts[msg.sender][keys[i].stakeToken];
+                ++userPoolCounts[msgSender][keys[i].stakeToken];
             }
 
             // update pool state
@@ -215,6 +225,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
     /// @inheritdoc IMasterBunni
     function exit(RushPoolKey[] calldata keys) external nonReentrant {
+        address msgSender = LibMulticaller.senderOrSigner();
+
         for (uint256 i; i < keys.length; i++) {
             // should be past pool's start timestamp
             if (block.timestamp < keys[i].startTimestamp) {
@@ -222,7 +234,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             }
 
             RushPoolId id = keys[i].toId();
-            StakeState memory userState = userStates[id][msg.sender];
+            StakeState memory userState = userStates[id][msgSender];
 
             // user should have staked in the pool
             if (userState.stakeAmount == 0) {
@@ -235,12 +247,12 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             uint256 userStakeXTimeUpdated = _computeStakeXTime(
                 keys[i], userState.stakeXTimeStored, userState.stakeAmount, userState.lastStakeAmountUpdateTimestamp
             );
-            userStates[id][msg.sender] = StakeState({
+            userStates[id][msgSender] = StakeState({
                 stakeAmount: 0,
                 stakeXTimeStored: userStakeXTimeUpdated,
                 lastStakeAmountUpdateTimestamp: latestActiveTimestamp
             });
-            --userPoolCounts[msg.sender][keys[i].stakeToken];
+            --userPoolCounts[msgSender][keys[i].stakeToken];
 
             // update pool state
             StakeState memory poolState = poolStates[id];
@@ -257,28 +269,32 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
     /// @inheritdoc IMasterBunni
     function unlock(IERC20Lockable[] calldata stakeTokens) external nonReentrant {
+        address msgSender = LibMulticaller.senderOrSigner();
+
         for (uint256 i; i < stakeTokens.length; i++) {
             // pool count should be 0
-            if (userPoolCounts[msg.sender][stakeTokens[i]] != 0) {
+            if (userPoolCounts[msgSender][stakeTokens[i]] != 0) {
                 continue;
             }
 
-            // address(this) should be the unlocker of msg.sender
-            // and msg.sender should be locked
+            // address(this) should be the unlocker of msgSender
+            // and msgSender should be locked
             if (
-                stakeTokens[i].unlockerOf(msg.sender) != IERC20Unlocker(address(this))
-                    || !stakeTokens[i].isLocked(msg.sender)
+                stakeTokens[i].unlockerOf(msgSender) != IERC20Unlocker(address(this))
+                    || !stakeTokens[i].isLocked(msgSender)
             ) {
                 continue;
             }
 
             // unlock stake token
-            stakeTokens[i].unlock(msg.sender);
+            stakeTokens[i].unlock(msgSender);
         }
     }
 
     /// @inheritdoc IMasterBunni
     function claim(ClaimParams[] calldata params, address recipient) external nonReentrant {
+        address msgSender = LibMulticaller.senderOrSigner();
+
         for (uint256 i; i < params.length; i++) {
             address incentiveToken = params[i].incentiveToken;
             uint256 totalClaimableAmount;
@@ -287,9 +303,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 // load state
                 RushPoolKey calldata key = params[i].keys[j];
                 RushPoolId id = key.toId();
-                StakeState memory userState = userStates[id][msg.sender];
+                StakeState memory userState = userStates[id][msgSender];
                 uint256 incentiveAmount = incentiveAmounts[id][incentiveToken];
-                uint256 rewardPaid = userRewardPaid[id][msg.sender][incentiveToken];
+                uint256 rewardPaid = userRewardPaid[id][msgSender][incentiveToken];
 
                 // compute claimable reward
                 uint256 stakeXTimeUpdated = _computeStakeXTime(
@@ -299,7 +315,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 uint256 claimableReward = rewardAccrued - rewardPaid;
 
                 // update claim state
-                userRewardPaid[id][msg.sender][incentiveToken] = rewardAccrued;
+                userRewardPaid[id][msgSender][incentiveToken] = rewardAccrued;
 
                 // accumulate claimable reward
                 totalClaimableAmount += claimableReward;
