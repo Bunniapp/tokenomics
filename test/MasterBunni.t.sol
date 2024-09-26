@@ -569,6 +569,423 @@ contract MasterBunniTest is Test {
         assertEq(incentiveToken.balanceOf(refundRecipient), incentiveAmount - reward1 - reward2);
     }
 
+    function test_depositIncentive_multiple() public {
+        uint256[] memory incentiveAmounts = new uint256[](3);
+        incentiveAmounts[0] = 100 ether;
+        incentiveAmounts[1] = 200 ether;
+        incentiveAmounts[2] = 300 ether;
+
+        ERC20ReferrerMock stakeToken1 = new ERC20ReferrerMock();
+        ERC20ReferrerMock stakeToken2 = new ERC20ReferrerMock();
+        ERC20ReferrerMock stakeToken3 = new ERC20ReferrerMock();
+        ERC20Mock incentiveToken = new ERC20Mock();
+
+        RushPoolKey[] memory keys = new RushPoolKey[](3);
+        keys[0] = RushPoolKey({
+            stakeToken: stakeToken1,
+            stakeCap: 1000 ether,
+            startTimestamp: block.timestamp + 1 days,
+            programLength: 7 days
+        });
+        keys[1] = RushPoolKey({
+            stakeToken: stakeToken2,
+            stakeCap: 2000 ether,
+            startTimestamp: block.timestamp + 2 days,
+            programLength: 14 days
+        });
+        keys[2] = RushPoolKey({
+            stakeToken: stakeToken3,
+            stakeCap: 3000 ether,
+            startTimestamp: block.timestamp + 3 days,
+            programLength: 21 days
+        });
+
+        IMasterBunni.IncentiveParams[] memory params = new IMasterBunni.IncentiveParams[](3);
+        for (uint256 i = 0; i < 3; i++) {
+            params[i] = IMasterBunni.IncentiveParams({key: keys[i], incentiveAmount: incentiveAmounts[i]});
+        }
+
+        uint256 totalIncentiveAmount = incentiveAmounts[0] + incentiveAmounts[1] + incentiveAmounts[2];
+        incentiveToken.mint(address(this), totalIncentiveAmount);
+        incentiveToken.approve(address(masterBunni), totalIncentiveAmount);
+
+        uint256 depositedAmount = masterBunni.depositIncentive(params, address(incentiveToken), RECIPIENT);
+
+        assertEq(depositedAmount, totalIncentiveAmount, "Total deposited amount incorrect");
+        assertEq(incentiveToken.balanceOf(address(masterBunni)), totalIncentiveAmount, "MasterBunni balance incorrect");
+
+        for (uint256 i = 0; i < 3; i++) {
+            RushPoolId id = keys[i].toId();
+            assertEq(
+                masterBunni.incentiveAmounts(id, address(incentiveToken)),
+                incentiveAmounts[i],
+                "Incentive amount incorrect"
+            );
+            assertEq(
+                masterBunni.incentiveDeposits(id, address(incentiveToken), RECIPIENT),
+                incentiveAmounts[i],
+                "Incentive deposit incorrect"
+            );
+        }
+    }
+
+    function test_withdrawIncentive_multiple() public {
+        (RushPoolKey[] memory keys, uint256[] memory incentiveAmounts, ERC20Mock incentiveToken) =
+            _setupMultipleIncentives();
+
+        IMasterBunni.IncentiveParams[] memory params = new IMasterBunni.IncentiveParams[](3);
+        for (uint256 i = 0; i < 3; i++) {
+            params[i] = IMasterBunni.IncentiveParams({key: keys[i], incentiveAmount: incentiveAmounts[i]});
+        }
+
+        uint256 totalIncentiveAmount = incentiveAmounts[0] + incentiveAmounts[1] + incentiveAmounts[2];
+        uint256 withdrawnAmount = masterBunni.withdrawIncentive(params, address(incentiveToken), RECIPIENT);
+
+        assertEq(withdrawnAmount, totalIncentiveAmount, "Total withdrawn amount incorrect");
+        assertEq(incentiveToken.balanceOf(RECIPIENT), totalIncentiveAmount, "Recipient balance incorrect");
+        assertEq(incentiveToken.balanceOf(address(masterBunni)), 0, "MasterBunni balance should be zero");
+
+        for (uint256 i = 0; i < 3; i++) {
+            RushPoolId id = keys[i].toId();
+            assertEq(masterBunni.incentiveAmounts(id, address(incentiveToken)), 0, "Incentive amount should be zero");
+            assertEq(
+                masterBunni.incentiveDeposits(id, address(incentiveToken), address(this)),
+                0,
+                "Incentive deposit should be zero"
+            );
+        }
+    }
+
+    function test_join_multiple() public {
+        (RushPoolKey[] memory keys,,) = _setupMultipleIncentives();
+
+        address staker = address(0x1234);
+        uint256 stakeAmount = 100 ether;
+
+        for (uint256 i = 0; i < keys.length; i++) {
+            ERC20ReferrerMock(address(keys[i].stakeToken)).mint(staker, stakeAmount, 0);
+        }
+
+        vm.startPrank(staker);
+        for (uint256 i = 0; i < keys.length; i++) {
+            ERC20ReferrerMock(address(keys[i].stakeToken)).approve(address(masterBunni), type(uint256).max);
+            ERC20ReferrerMock(address(keys[i].stakeToken)).lock(
+                masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: new RushPoolKey[](0)}))
+            );
+        }
+
+        skip(1 days); // Ensure all programs have started
+
+        masterBunni.join(keys);
+        vm.stopPrank();
+
+        for (uint256 i = 0; i < keys.length; i++) {
+            RushPoolId id = keys[i].toId();
+            (uint256 poolStakeAmount,,) = masterBunni.poolStates(id);
+            (uint256 userStakeAmount,,) = masterBunni.userStates(id, staker);
+
+            assertEq(poolStakeAmount, stakeAmount, "Pool stake amount incorrect");
+            assertEq(userStakeAmount, stakeAmount, "User stake amount incorrect");
+            assertEq(
+                masterBunni.userPoolCounts(staker, IERC20Lockable(address(keys[i].stakeToken))),
+                1,
+                "User pool count incorrect"
+            );
+        }
+    }
+
+    function test_exit_multiple() public {
+        (RushPoolKey[] memory keys,,) = _setupMultipleIncentives();
+
+        address staker = address(0x1234);
+        uint256 stakeAmount = 100 ether;
+
+        for (uint256 i = 0; i < keys.length; i++) {
+            ERC20ReferrerMock(address(keys[i].stakeToken)).mint(staker, stakeAmount, 0);
+        }
+
+        vm.startPrank(staker);
+        for (uint256 i = 0; i < keys.length; i++) {
+            ERC20ReferrerMock(address(keys[i].stakeToken)).approve(address(masterBunni), type(uint256).max);
+            ERC20ReferrerMock(address(keys[i].stakeToken)).lock(
+                masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys}))
+            );
+        }
+
+        skip(14 days); // Stake for 2 weeks
+
+        masterBunni.exit(keys);
+        vm.stopPrank();
+
+        for (uint256 i = 0; i < keys.length; i++) {
+            RushPoolId id = keys[i].toId();
+            (uint256 poolStakeAmount,,) = masterBunni.poolStates(id);
+            (uint256 userStakeAmount,,) = masterBunni.userStates(id, staker);
+
+            assertEq(poolStakeAmount, 0, "Pool stake amount should be zero");
+            assertEq(userStakeAmount, 0, "User stake amount should be zero");
+            assertEq(
+                masterBunni.userPoolCounts(staker, IERC20Lockable(address(keys[i].stakeToken))),
+                0,
+                "User pool count should be zero"
+            );
+        }
+    }
+
+    function test_claim_multiple() public {
+        (RushPoolKey[] memory keys, uint256[] memory incentiveAmounts, ERC20Mock incentiveToken) =
+            _setupMultipleIncentives();
+
+        // start programs
+        skip(1 days);
+
+        address staker = address(0x1234);
+        uint256 stakeAmount = 100 ether;
+
+        for (uint256 i = 0; i < keys.length; i++) {
+            ERC20ReferrerMock(address(keys[i].stakeToken)).mint(staker, stakeAmount, 0);
+        }
+
+        vm.startPrank(staker);
+        for (uint256 i = 0; i < keys.length; i++) {
+            ERC20ReferrerMock(address(keys[i].stakeToken)).approve(address(masterBunni), type(uint256).max);
+            ERC20ReferrerMock(address(keys[i].stakeToken)).lock(
+                masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys}))
+            );
+        }
+
+        skip(21 days); // Stake for 3 weeks (longest program length)
+
+        IMasterBunni.ClaimParams[] memory params = new IMasterBunni.ClaimParams[](1);
+        params[0].incentiveToken = address(incentiveToken);
+        params[0].keys = keys;
+
+        masterBunni.claim(params, staker);
+        vm.stopPrank();
+
+        uint256 totalReward = 0;
+        for (uint256 i = 0; i < keys.length; i++) {
+            RushPoolId id = keys[i].toId();
+            uint256 expectedReward = _expectedReward(keys[i], incentiveAmounts[i], keys[i].programLength, stakeAmount);
+            uint256 actualReward = masterBunni.userRewardPaid(id, staker, address(incentiveToken));
+
+            assertApproxEqRel(actualReward, expectedReward, MAX_REL_ERROR, "Reward amount incorrect");
+            totalReward += actualReward;
+        }
+
+        assertEq(incentiveToken.balanceOf(staker), totalReward, "Total claimed reward incorrect");
+    }
+
+    function test_unlock_multiple() public {
+        (RushPoolKey[] memory keys,,) = _setupMultipleIncentives();
+
+        // start programs
+        skip(1 days);
+
+        address staker = address(0x1234);
+        uint256 stakeAmount = 100 ether;
+
+        for (uint256 i = 0; i < keys.length; i++) {
+            ERC20ReferrerMock(address(keys[i].stakeToken)).mint(staker, stakeAmount, 0);
+        }
+
+        vm.startPrank(staker);
+        for (uint256 i = 0; i < keys.length; i++) {
+            ERC20ReferrerMock(address(keys[i].stakeToken)).approve(address(masterBunni), type(uint256).max);
+            ERC20ReferrerMock(address(keys[i].stakeToken)).lock(
+                masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys}))
+            );
+        }
+
+        skip(21 days); // Stake for 3 weeks (longest program length)
+
+        masterBunni.exit(keys);
+
+        IERC20Lockable[] memory stakeTokens = new IERC20Lockable[](keys.length);
+        for (uint256 i = 0; i < keys.length; i++) {
+            stakeTokens[i] = IERC20Lockable(address(keys[i].stakeToken));
+        }
+
+        masterBunni.unlock(stakeTokens);
+        vm.stopPrank();
+
+        for (uint256 i = 0; i < keys.length; i++) {
+            assertFalse(
+                ERC20ReferrerMock(address(keys[i].stakeToken)).isLocked(staker), "Stake token should be unlocked"
+            );
+        }
+    }
+
+    function test_refundIncentive_multiple() public {
+        (RushPoolKey[] memory keys, uint256[] memory incentiveAmounts, ERC20Mock incentiveToken) =
+            _setupMultipleIncentives();
+
+        // start programs
+        skip(1 days);
+
+        address staker = address(0x1234);
+        uint256 stakeAmount = 100 ether;
+
+        for (uint256 i = 0; i < keys.length; i++) {
+            ERC20ReferrerMock(address(keys[i].stakeToken)).mint(staker, stakeAmount, 0);
+        }
+
+        vm.startPrank(staker);
+        for (uint256 i = 0; i < keys.length; i++) {
+            ERC20ReferrerMock(address(keys[i].stakeToken)).approve(address(masterBunni), type(uint256).max);
+            ERC20ReferrerMock(address(keys[i].stakeToken)).lock(
+                masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys}))
+            );
+        }
+
+        skip(21 days + 1); // Stake for 3 weeks (longest program length)
+
+        IMasterBunni.ClaimParams[] memory claimParams = new IMasterBunni.ClaimParams[](1);
+        claimParams[0].incentiveToken = address(incentiveToken);
+        claimParams[0].keys = keys;
+
+        masterBunni.claim(claimParams, staker);
+        vm.stopPrank();
+
+        address refundRecipient = address(0x5678);
+        masterBunni.refundIncentive(claimParams, refundRecipient);
+
+        uint256 totalIncentive;
+        uint256 totalClaimed;
+        for (uint256 i; i < keys.length; i++) {
+            totalIncentive += incentiveAmounts[i];
+            totalClaimed += masterBunni.userRewardPaid(keys[i].toId(), staker, address(incentiveToken));
+        }
+
+        assertEq(incentiveToken.balanceOf(refundRecipient), totalIncentive - totalClaimed, "Refund amount incorrect");
+    }
+
+    function test_multipleOperations() public {
+        (RushPoolKey[] memory keys, uint256[] memory incentiveAmounts, ERC20Mock incentiveToken) =
+            _setupMultipleIncentives();
+
+        // start programs
+        skip(1 days);
+
+        address staker1 = address(0x1234);
+        address staker2 = address(0x5678);
+        uint256 stakeAmount = 100 ether;
+
+        // Mint and approve stake tokens for both stakers
+        for (uint256 i = 0; i < keys.length; i++) {
+            ERC20ReferrerMock(address(keys[i].stakeToken)).mint(staker1, stakeAmount, 0);
+            ERC20ReferrerMock(address(keys[i].stakeToken)).mint(staker2, stakeAmount, 0);
+        }
+
+        vm.startPrank(staker1);
+        for (uint256 i = 0; i < keys.length; i++) {
+            ERC20ReferrerMock(address(keys[i].stakeToken)).approve(address(masterBunni), type(uint256).max);
+            ERC20ReferrerMock(address(keys[i].stakeToken)).lock(
+                masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys}))
+            );
+        }
+        vm.stopPrank();
+
+        vm.startPrank(staker2);
+        for (uint256 i = 0; i < keys.length; i++) {
+            ERC20ReferrerMock(address(keys[i].stakeToken)).approve(address(masterBunni), type(uint256).max);
+            ERC20ReferrerMock(address(keys[i].stakeToken)).lock(
+                masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys}))
+            );
+        }
+        vm.stopPrank();
+
+        skip(7 days); // First program ends
+
+        // Staker1 exits from the first pool
+        RushPoolKey[] memory firstPoolKeys = new RushPoolKey[](1);
+        firstPoolKeys[0] = keys[0];
+        vm.prank(staker1);
+        masterBunni.exit(firstPoolKeys);
+
+        skip(7 days); // Second program ends
+
+        // Both stakers claim rewards
+        IMasterBunni.ClaimParams[] memory claimParams = new IMasterBunni.ClaimParams[](1);
+        claimParams[0].incentiveToken = address(incentiveToken);
+        claimParams[0].keys = keys;
+
+        vm.prank(staker1);
+        masterBunni.claim(claimParams, staker1);
+
+        vm.prank(staker2);
+        masterBunni.claim(claimParams, staker2);
+
+        skip(7 days + 1); // Third program ends
+
+        // Staker1 exits from all pools
+        vm.prank(staker1);
+        masterBunni.exit(keys);
+
+        // Staker2 exits from all pools
+        vm.prank(staker2);
+        masterBunni.exit(keys);
+
+        // Unlock stake tokens for both stakers
+        IERC20Lockable[] memory stakeTokens = new IERC20Lockable[](keys.length);
+        for (uint256 i = 0; i < keys.length; i++) {
+            stakeTokens[i] = IERC20Lockable(address(keys[i].stakeToken));
+        }
+
+        vm.prank(staker1);
+        masterBunni.unlock(stakeTokens);
+
+        vm.prank(staker2);
+        masterBunni.unlock(stakeTokens);
+
+        // Refund remaining incentives
+        address refundRecipient = address(0x9999);
+        masterBunni.refundIncentive(claimParams, refundRecipient);
+
+        // Both claim rewards
+        vm.prank(staker1);
+        masterBunni.claim(claimParams, staker1);
+
+        vm.prank(staker2);
+        masterBunni.claim(claimParams, staker2);
+
+        // Verify final states
+        for (uint256 i = 0; i < keys.length; i++) {
+            RushPoolId id = keys[i].toId();
+            (uint256 poolStakeAmount,,) = masterBunni.poolStates(id);
+            assertEq(poolStakeAmount, 0, "Pool stake amount should be zero");
+
+            assertEq(
+                masterBunni.userPoolCounts(staker1, IERC20Lockable(address(keys[i].stakeToken))),
+                0,
+                "Staker1 pool count should be zero"
+            );
+            assertEq(
+                masterBunni.userPoolCounts(staker2, IERC20Lockable(address(keys[i].stakeToken))),
+                0,
+                "Staker2 pool count should be zero"
+            );
+
+            assertFalse(
+                ERC20ReferrerMock(address(keys[i].stakeToken)).isLocked(staker1),
+                "Staker1 stake token should be unlocked"
+            );
+            assertFalse(
+                ERC20ReferrerMock(address(keys[i].stakeToken)).isLocked(staker2),
+                "Staker2 stake token should be unlocked"
+            );
+        }
+
+        uint256 totalIncentive = incentiveAmounts[0] + incentiveAmounts[1] + incentiveAmounts[2];
+        uint256 totalClaimed = incentiveToken.balanceOf(staker1) + incentiveToken.balanceOf(staker2);
+        assertApproxEqRel(
+            incentiveToken.balanceOf(refundRecipient),
+            totalIncentive - totalClaimed,
+            MAX_REL_ERROR,
+            "Refund amount incorrect"
+        );
+    }
+
     /// -----------------------------------------------------------------------
     /// Edge case tests
     /// -----------------------------------------------------------------------
@@ -802,5 +1219,49 @@ contract MasterBunniTest is Test {
         returns (uint256)
     {
         return incentiveAmount.mulDiv(_expectedStakeXTime(key, stakeTime, stakeAmount), PRECISION);
+    }
+
+    function _setupMultipleIncentives()
+        internal
+        returns (RushPoolKey[] memory keys, uint256[] memory incentiveAmounts, ERC20Mock incentiveToken)
+    {
+        keys = new RushPoolKey[](3);
+        incentiveAmounts = new uint256[](3);
+
+        keys[0] = RushPoolKey({
+            stakeToken: new ERC20ReferrerMock(),
+            stakeCap: 1000 ether,
+            startTimestamp: block.timestamp + 1 days,
+            programLength: 7 days
+        });
+        incentiveAmounts[0] = 100 ether;
+
+        keys[1] = RushPoolKey({
+            stakeToken: new ERC20ReferrerMock(),
+            stakeCap: 2000 ether,
+            startTimestamp: block.timestamp + 1 days,
+            programLength: 14 days
+        });
+        incentiveAmounts[1] = 200 ether;
+
+        keys[2] = RushPoolKey({
+            stakeToken: new ERC20ReferrerMock(),
+            stakeCap: 3000 ether,
+            startTimestamp: block.timestamp + 1 days,
+            programLength: 21 days
+        });
+        incentiveAmounts[2] = 300 ether;
+
+        incentiveToken = new ERC20Mock();
+        uint256 totalIncentiveAmount = incentiveAmounts[0] + incentiveAmounts[1] + incentiveAmounts[2];
+        incentiveToken.mint(address(this), totalIncentiveAmount);
+        incentiveToken.approve(address(masterBunni), totalIncentiveAmount);
+
+        IMasterBunni.IncentiveParams[] memory params = new IMasterBunni.IncentiveParams[](3);
+        for (uint256 i = 0; i < 3; i++) {
+            params[i] = IMasterBunni.IncentiveParams({key: keys[i], incentiveAmount: incentiveAmounts[i]});
+        }
+
+        masterBunni.depositIncentive(params, address(incentiveToken), address(this));
     }
 }
