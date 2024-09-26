@@ -134,4 +134,14 @@ interface IMasterBunni is IERC20Unlocker {
     /// @param params The list of RushPools to claim the incentives for and the incentive tokens to claim.
     /// @param recipient The address that will receive the claimed incentive tokens.
     function claim(ClaimParams[] calldata params, address recipient) external;
+
+    /// @notice Returns the amount of claimable reward for a user in a RushPool.
+    /// @param key The RushPoolKey of the RushPool.
+    /// @param user The address of the user.
+    /// @param incentiveToken The incentive token to check.
+    /// @return claimableReward The amount of claimable reward for the user in the RushPool.
+    function getClaimableReward(RushPoolKey calldata key, address user, address incentiveToken)
+        external
+        view
+        returns (uint256 claimableReward);
 }

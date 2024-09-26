@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.4;
 
+import "forge-std/console2.sol";
+
 import {ERC20} from "solady/tokens/ERC20.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
@@ -118,8 +120,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 uint256 stakeXTimeUpdated = _computeStakeXTime(
                     key, poolState.stakeXTimeStored, poolState.stakeAmount, poolState.lastStakeAmountUpdateTimestamp
                 );
-                uint256 rewardAccured = incentiveAmount.mulDiv(stakeXTimeUpdated, PRECISION);
-                uint256 refundAmount = incentiveAmount - rewardAccured;
+                uint256 rewardAccrued = incentiveAmount.mulDiv(stakeXTimeUpdated, PRECISION);
+                uint256 refundAmount = incentiveAmount - rewardAccrued;
 
                 // delete incentive deposit to mark the incentive as refunded
                 delete incentiveDeposits[id][incentiveToken][msg.sender];
@@ -293,11 +295,11 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 uint256 stakeXTimeUpdated = _computeStakeXTime(
                     key, userState.stakeXTimeStored, userState.stakeAmount, userState.lastStakeAmountUpdateTimestamp
                 );
-                uint256 rewardAccured = incentiveAmount.mulDiv(stakeXTimeUpdated, PRECISION);
-                uint256 claimableReward = rewardAccured - rewardPaid;
+                uint256 rewardAccrued = incentiveAmount.mulDiv(stakeXTimeUpdated, PRECISION);
+                uint256 claimableReward = rewardAccrued - rewardPaid;
 
                 // update claim state
-                userRewardPaid[id][msg.sender][incentiveToken] = rewardAccured;
+                userRewardPaid[id][msg.sender][incentiveToken] = rewardAccrued;
 
                 // accumulate claimable reward
                 totalClaimableAmount += claimableReward;
@@ -308,6 +310,30 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 incentiveToken.safeTransfer(recipient, totalClaimableAmount);
             }
         }
+    }
+
+    /// -----------------------------------------------------------------------
+    /// Getters
+    /// -----------------------------------------------------------------------
+
+    /// @inheritdoc IMasterBunni
+    function getClaimableReward(RushPoolKey calldata key, address user, address incentiveToken)
+        external
+        view
+        returns (uint256 claimableReward)
+    {
+        // load state
+        RushPoolId id = key.toId();
+        StakeState memory userState = userStates[id][user];
+        uint256 incentiveAmount = incentiveAmounts[id][incentiveToken];
+        uint256 rewardPaid = userRewardPaid[id][user][incentiveToken];
+
+        // compute claimable reward
+        uint256 stakeXTimeUpdated = _computeStakeXTime(
+            key, userState.stakeXTimeStored, userState.stakeAmount, userState.lastStakeAmountUpdateTimestamp
+        );
+        uint256 rewardAccrued = incentiveAmount.mulDiv(stakeXTimeUpdated, PRECISION);
+        return rewardAccrued - rewardPaid;
     }
 
     /// -----------------------------------------------------------------------
@@ -401,6 +427,6 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         uint256 timeElapsedSinceLastUpdate =
             FixedPointMathLib.min(block.timestamp, endTimestamp) - lastStakeAmountUpdateTimestamp;
         return stakeXTimeStored
-            + stakeAmount.mulDiv(PRECISION, key.stakeCap).mulDiv(timeElapsedSinceLastUpdate, key.programLength);
+            + PRECISION.mulDiv(stakeAmount, key.stakeCap).mulDiv(timeElapsedSinceLastUpdate, key.programLength);
     }
 }
