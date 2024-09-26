@@ -14,6 +14,7 @@ contract MasterBunniTest is Test {
 
     uint256 internal constant PRECISION = 1e30;
     address internal constant RECIPIENT = address(0xB0B);
+    uint256 internal constant MAX_REL_ERROR = 1e3;
 
     IMasterBunni masterBunni;
 
@@ -301,6 +302,271 @@ contract MasterBunniTest is Test {
 
         // check unlocked
         assertFalse(stakeToken.isLocked(address(this)));
+    }
+
+    function test_multipleStakers_differentStakeTimes() public {
+        uint256 incentiveAmount = 1000 ether;
+        uint256 stakeCap = 1000 ether;
+        uint256 programLength = 10 days;
+
+        (RushPoolKey memory key,, ERC20ReferrerMock stakeToken, ERC20Mock incentiveToken) =
+            _createIncentive(incentiveAmount, stakeCap, block.timestamp + 1, programLength);
+        skip(1); // start program
+
+        address staker1 = address(0x1);
+        address staker2 = address(0x2);
+        address staker3 = address(0x3);
+
+        // Mint and approve stake tokens
+        stakeToken.mint(staker1, 400 ether, 0);
+        stakeToken.mint(staker2, 300 ether, 0);
+        stakeToken.mint(staker3, 300 ether, 0);
+
+        vm.startPrank(staker1);
+        stakeToken.approve(address(masterBunni), type(uint256).max);
+        vm.stopPrank();
+
+        vm.startPrank(staker2);
+        stakeToken.approve(address(masterBunni), type(uint256).max);
+        vm.stopPrank();
+
+        vm.startPrank(staker3);
+        stakeToken.approve(address(masterBunni), type(uint256).max);
+        vm.stopPrank();
+
+        // Staker 1 stakes at the beginning
+        vm.startPrank(staker1);
+        RushPoolKey[] memory keys = new RushPoolKey[](1);
+        keys[0] = key;
+        stakeToken.lock(masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys})));
+        vm.stopPrank();
+
+        skip(2 days);
+
+        // Staker 2 stakes after 2 days
+        vm.startPrank(staker2);
+        stakeToken.lock(masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys})));
+        vm.stopPrank();
+
+        skip(3 days);
+
+        // Staker 3 stakes after 5 days
+        vm.startPrank(staker3);
+        stakeToken.lock(masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys})));
+        vm.stopPrank();
+
+        skip(5 days); // End of program
+
+        // Claim rewards for all stakers
+        IMasterBunni.ClaimParams[] memory params = new IMasterBunni.ClaimParams[](1);
+        params[0].incentiveToken = address(incentiveToken);
+        params[0].keys = keys;
+
+        vm.prank(staker1);
+        masterBunni.claim(params, staker1);
+
+        vm.prank(staker2);
+        masterBunni.claim(params, staker2);
+
+        vm.prank(staker3);
+        masterBunni.claim(params, staker3);
+
+        // Check rewards
+        uint256 reward1 = incentiveToken.balanceOf(staker1);
+        uint256 reward2 = incentiveToken.balanceOf(staker2);
+        uint256 reward3 = incentiveToken.balanceOf(staker3);
+        assertApproxEqRel(
+            reward1,
+            _expectedReward(key, incentiveAmount, programLength, 400 ether),
+            MAX_REL_ERROR,
+            "Staker 1 reward incorrect"
+        );
+        assertApproxEqRel(
+            reward2,
+            _expectedReward(key, incentiveAmount, (programLength - 2 days), 300 ether),
+            MAX_REL_ERROR,
+            "Staker 2 reward incorrect"
+        );
+        assertApproxEqRel(
+            reward3,
+            _expectedReward(key, incentiveAmount, (programLength - 5 days), 300 ether),
+            MAX_REL_ERROR,
+            "Staker 3 reward incorrect"
+        );
+
+        // Get refund
+        skip(1); // skip past program end
+        address refundRecipient = address(0x666);
+        masterBunni.refundIncentive(params, refundRecipient);
+
+        // Check refund amount
+        assertEq(incentiveToken.balanceOf(refundRecipient), incentiveAmount - reward1 - reward2 - reward3);
+    }
+
+    function test_multipleStakers_unstakeAndRestake() public {
+        uint256 incentiveAmount = 1000 ether;
+        uint256 stakeCap = 1000 ether;
+        uint256 programLength = 10 days;
+
+        (RushPoolKey memory key,, ERC20ReferrerMock stakeToken, ERC20Mock incentiveToken) =
+            _createIncentive(incentiveAmount, stakeCap, block.timestamp + 1, programLength);
+        skip(1); // start program
+
+        address staker1 = address(0x1);
+        address staker2 = address(0x2);
+
+        // Mint and approve stake tokens
+        stakeToken.mint(staker1, 500 ether, 0);
+        stakeToken.mint(staker2, 500 ether, 0);
+
+        vm.prank(staker1);
+        stakeToken.approve(address(masterBunni), type(uint256).max);
+
+        vm.prank(staker2);
+        stakeToken.approve(address(masterBunni), type(uint256).max);
+
+        // Both stakers stake at the beginning
+        RushPoolKey[] memory keys = new RushPoolKey[](1);
+        keys[0] = key;
+
+        vm.prank(staker1);
+        stakeToken.lock(masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys})));
+
+        vm.prank(staker2);
+        stakeToken.lock(masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys})));
+
+        skip(3 days);
+
+        // Staker 1 exits after 3 days
+        vm.prank(staker1);
+        masterBunni.exit(keys);
+
+        skip(2 days);
+
+        // Staker 1 re-stakes after 2 more days (5 days total)
+        vm.prank(staker1);
+        masterBunni.join(keys);
+
+        skip(5 days); // End of program
+
+        // Claim rewards for both stakers
+        IMasterBunni.ClaimParams[] memory params = new IMasterBunni.ClaimParams[](1);
+        params[0].incentiveToken = address(incentiveToken);
+        params[0].keys = keys;
+
+        vm.prank(staker1);
+        masterBunni.claim(params, staker1);
+
+        vm.prank(staker2);
+        masterBunni.claim(params, staker2);
+
+        // Check rewards
+        uint256 reward1 = incentiveToken.balanceOf(staker1);
+        uint256 reward2 = incentiveToken.balanceOf(staker2);
+        assertApproxEqRel(
+            reward1,
+            _expectedReward(key, incentiveAmount, 3 days, 500 ether)
+                + _expectedReward(key, incentiveAmount, 5 days, 500 ether),
+            MAX_REL_ERROR,
+            "Staker 1 reward incorrect"
+        );
+        assertApproxEqRel(
+            reward2,
+            _expectedReward(key, incentiveAmount, programLength, 500 ether),
+            MAX_REL_ERROR,
+            "Staker 2 reward incorrect"
+        );
+
+        // Get refund
+        skip(1); // skip past program end
+        address refundRecipient = address(0x666);
+        masterBunni.refundIncentive(params, refundRecipient);
+
+        // Check refund amount
+        assertEq(incentiveToken.balanceOf(refundRecipient), incentiveAmount - reward1 - reward2);
+    }
+
+    function test_multipleStakers_partialUnstake() public {
+        uint256 incentiveAmount = 1000 ether;
+        uint256 stakeCap = 1000 ether;
+        uint256 programLength = 10 days;
+
+        (RushPoolKey memory key,, ERC20ReferrerMock stakeToken, ERC20Mock incentiveToken) =
+            _createIncentive(incentiveAmount, stakeCap, block.timestamp + 1, programLength);
+        skip(1); // start program
+
+        address staker1 = address(0x1);
+        address staker2 = address(0x2);
+
+        // Mint and approve stake tokens
+        stakeToken.mint(staker1, 600 ether, 0);
+        stakeToken.mint(staker2, 400 ether, 0);
+
+        vm.prank(staker1);
+        stakeToken.approve(address(masterBunni), type(uint256).max);
+
+        vm.prank(staker2);
+        stakeToken.approve(address(masterBunni), type(uint256).max);
+
+        // Both stakers stake at the beginning
+        RushPoolKey[] memory keys = new RushPoolKey[](1);
+        keys[0] = key;
+
+        vm.prank(staker1);
+        stakeToken.lock(masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys})));
+
+        vm.prank(staker2);
+        stakeToken.lock(masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys})));
+
+        skip(5 days);
+
+        // Staker 1 partially exits (300 ether) after 5 days
+        vm.startPrank(staker1);
+        masterBunni.exit(keys);
+        IERC20Lockable[] memory stakeTokens = new IERC20Lockable[](1);
+        stakeTokens[0] = stakeToken;
+        masterBunni.unlock(stakeTokens);
+        stakeToken.transfer(address(0xdead), 300 ether);
+        stakeToken.lock(masterBunni, abi.encode(IMasterBunni.LockCallbackData({keys: keys})));
+        vm.stopPrank();
+
+        skip(5 days); // End of program
+
+        // Claim rewards for both stakers
+        IMasterBunni.ClaimParams[] memory params = new IMasterBunni.ClaimParams[](1);
+        params[0].incentiveToken = address(incentiveToken);
+        params[0].keys = keys;
+
+        vm.prank(staker1);
+        masterBunni.claim(params, staker1);
+
+        vm.prank(staker2);
+        masterBunni.claim(params, staker2);
+
+        // Check rewards
+        uint256 reward1 = incentiveToken.balanceOf(staker1);
+        uint256 reward2 = incentiveToken.balanceOf(staker2);
+        assertApproxEqRel(
+            reward1,
+            _expectedReward(key, incentiveAmount, 5 days, 600 ether)
+                + _expectedReward(key, incentiveAmount, 5 days, 300 ether),
+            MAX_REL_ERROR,
+            "Staker 1 reward incorrect"
+        );
+        assertApproxEqRel(
+            reward2,
+            _expectedReward(key, incentiveAmount, programLength, 400 ether),
+            MAX_REL_ERROR,
+            "Staker 2 reward incorrect"
+        );
+
+        // Get refund
+        skip(1); // skip past program end
+        address refundRecipient = address(0x666);
+        masterBunni.refundIncentive(params, refundRecipient);
+
+        // Check refund amount
+        assertEq(incentiveToken.balanceOf(refundRecipient), incentiveAmount - reward1 - reward2);
     }
 
     /// -----------------------------------------------------------------------
