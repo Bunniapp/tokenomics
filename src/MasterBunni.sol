@@ -103,7 +103,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             for (uint256 j; j < params[i].keys.length; j++) {
                 // the program should be over
                 RushPoolKey calldata key = params[i].keys[j];
-                if (block.timestamp > key.startTimestamp + key.programLength) {
+                if (block.timestamp <= key.startTimestamp + key.programLength) {
                     continue;
                 }
 
