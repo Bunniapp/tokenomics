@@ -11,6 +11,8 @@ import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import {RushPoolId} from "./types/RushPoolId.sol";
 import {RushPoolKey} from "./types/RushPoolKey.sol";
+import {RecurPoolId} from "./types/RecurPoolId.sol";
+import {RecurPoolKey} from "./types/RecurPoolKey.sol";
 import {ReentrancyGuard} from "./lib/ReentrancyGuard.sol";
 import {IMasterBunni} from "./interfaces/IMasterBunni.sol";
 import {IERC20Unlocker} from "./external/IERC20Unlocker.sol";
@@ -22,21 +24,24 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
     uint256 internal constant PRECISION = 1e30;
 
-    mapping(RushPoolId id => StakeState) public poolStates;
-    mapping(RushPoolId id => mapping(address incentiveToken => uint256)) public incentiveAmounts;
-    mapping(RushPoolId id => mapping(address incentiveToken => mapping(address depositor => uint256))) public
-        incentiveDeposits;
-
-    mapping(RushPoolId id => mapping(address user => StakeState)) public userStates;
     mapping(address user => mapping(IERC20Lockable stakeToken => uint256)) public userPoolCounts;
-    mapping(RushPoolId id => mapping(address user => mapping(address incentiveToken => uint256))) public userRewardPaid;
+
+    mapping(RushPoolId id => RushStakeState) public rushPoolStates;
+    mapping(RushPoolId id => mapping(address incentiveToken => uint256)) public rushPoolIncentiveAmounts;
+    mapping(RushPoolId id => mapping(address incentiveToken => mapping(address depositor => uint256))) public
+        rushPoolIncentiveDeposits;
+    mapping(RushPoolId id => mapping(address user => RushStakeState)) public rushPoolUserStates;
+    mapping(RushPoolId id => mapping(address user => mapping(address incentiveToken => uint256))) public
+        rushPoolUserRewardPaid;
+
+    mapping(RecurPoolId id => RecurPoolState) public recurPoolStates;
 
     /// -----------------------------------------------------------------------
     /// Incentivizer actions
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IMasterBunni
-    function depositIncentive(IncentiveParams[] calldata params, address incentiveToken, address recipient)
+    function depositIncentive(RushIncentiveParams[] calldata params, address incentiveToken, address recipient)
         external
         nonReentrant
         returns (uint256 totalIncentiveAmount)
@@ -56,10 +61,10 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             RushPoolId id = params[i].key.toId();
 
             // add incentive to pool
-            incentiveAmounts[id][incentiveToken] += params[i].incentiveAmount;
+            rushPoolIncentiveAmounts[id][incentiveToken] += params[i].incentiveAmount;
 
             // add incentive to depositor
-            incentiveDeposits[id][incentiveToken][recipient] += params[i].incentiveAmount;
+            rushPoolIncentiveDeposits[id][incentiveToken][recipient] += params[i].incentiveAmount;
         }
 
         // transfer incentive tokens to this contract
@@ -69,7 +74,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
     }
 
     /// @inheritdoc IMasterBunni
-    function withdrawIncentive(IncentiveParams[] calldata params, address incentiveToken, address recipient)
+    function withdrawIncentive(RushIncentiveParams[] calldata params, address incentiveToken, address recipient)
         external
         nonReentrant
         returns (uint256 totalWithdrawnAmount)
@@ -89,10 +94,10 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             RushPoolId id = params[i].key.toId();
 
             // subtract incentive from pool
-            incentiveAmounts[id][incentiveToken] -= params[i].incentiveAmount;
+            rushPoolIncentiveAmounts[id][incentiveToken] -= params[i].incentiveAmount;
 
             // subtract incentive from sender
-            incentiveDeposits[id][incentiveToken][msgSender] -= params[i].incentiveAmount;
+            rushPoolIncentiveDeposits[id][incentiveToken][msgSender] -= params[i].incentiveAmount;
         }
 
         // transfer incentive tokens to recipient
@@ -102,7 +107,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
     }
 
     /// @inheritdoc IMasterBunni
-    function refundIncentive(ClaimParams[] calldata params, address recipient) external nonReentrant {
+    function refundIncentive(RushClaimParams[] calldata params, address recipient) external nonReentrant {
         address msgSender = LibMulticaller.senderOrSigner();
 
         for (uint256 i; i < params.length; i++) {
@@ -117,8 +122,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
                 // load state
                 RushPoolId id = key.toId();
-                StakeState memory poolState = poolStates[id];
-                uint256 incentiveAmount = incentiveDeposits[id][incentiveToken][msgSender]; // the incentives added by msgSender
+                RushStakeState memory poolState = rushPoolStates[id];
+                uint256 incentiveAmount = rushPoolIncentiveDeposits[id][incentiveToken][msgSender]; // the incentives added by msgSender
                 if (incentiveAmount == 0) {
                     continue;
                 }
@@ -132,7 +137,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 uint256 refundAmount = incentiveAmount - rewardAccrued;
 
                 // delete incentive deposit to mark the incentive as refunded
-                delete incentiveDeposits[id][incentiveToken][msgSender];
+                delete rushPoolIncentiveDeposits[id][incentiveToken][msgSender];
 
                 // accumulate refund amount
                 totalRefundAmount += refundAmount;
@@ -145,12 +150,73 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         }
     }
 
+    /// @inheritdoc IMasterBunni
+    function incentivizeRecurPool(RecurIncentiveParams[] calldata params, address incentiveToken)
+        external
+        returns (uint256 totalIncentiveAmount)
+    {
+        address msgSender = LibMulticaller.senderOrSigner();
+
+        for (uint256 i; i < params.length; i++) {
+            /// -----------------------------------------------------------------------
+            /// Validation
+            /// -----------------------------------------------------------------------
+
+            if (params[i].incentiveAmount == 0) continue;
+
+            /// -----------------------------------------------------------------------
+            /// Storage loads
+            /// -----------------------------------------------------------------------
+
+            RecurPoolKey calldata key = params[i].key;
+            RecurPoolId id = key.toId();
+            RecurPoolState storage state = recurPoolStates[id];
+            uint64 lastUpdateTime = state.lastUpdateTime;
+            uint64 periodFinish = state.periodFinish;
+            uint256 rewardRate = state.rewardRate;
+            uint64 lastTimeRewardApplicable = block.timestamp < periodFinish ? uint64(block.timestamp) : periodFinish;
+
+            /// -----------------------------------------------------------------------
+            /// State updates
+            /// -----------------------------------------------------------------------
+
+            // accrue rewards
+            state.rewardPerTokenStored = _rewardPerToken(
+                state.rewardPerTokenStored, state.totalSupply, lastTimeRewardApplicable, lastUpdateTime, rewardRate
+            );
+
+            // record new reward
+            uint256 newRewardRate;
+            if (block.timestamp >= periodFinish) {
+                newRewardRate = params[i].incentiveAmount / key.duration;
+            } else {
+                uint256 remaining = periodFinish - block.timestamp;
+                uint256 leftover = remaining * rewardRate;
+                newRewardRate = (params[i].incentiveAmount + leftover) / key.duration;
+            }
+            // prevent overflow when computing rewardPerToken
+            if (newRewardRate >= ((type(uint256).max / PRECISION) / key.duration)) {
+                revert MasterBunni__AmountTooLarge();
+            }
+            state.rewardRate = newRewardRate;
+            state.lastUpdateTime = uint64(block.timestamp);
+            state.periodFinish = uint64(block.timestamp + key.duration);
+
+            totalIncentiveAmount += params[i].incentiveAmount;
+        }
+
+        // transfer incentive tokens from msgSender to this contract
+        if (totalIncentiveAmount != 0) {
+            incentiveToken.safeTransferFrom(msgSender, address(this), totalIncentiveAmount);
+        }
+    }
+
     /// -----------------------------------------------------------------------
     /// Staker actions
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IMasterBunni
-    function join(RushPoolKey[] calldata keys) external nonReentrant {
+    function joinRushPool(RushPoolKey[] calldata keys) external nonReentrant {
         address msgSender = LibMulticaller.senderOrSigner();
 
         for (uint256 i; i < keys.length; i++) {
@@ -171,8 +237,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             }
 
             RushPoolId id = keys[i].toId();
-            StakeState memory userState = userStates[id][msgSender];
-            StakeState memory poolState = poolStates[id];
+            RushStakeState memory userState = rushPoolUserStates[id][msgSender];
+            RushStakeState memory poolState = rushPoolStates[id];
             uint256 remainderStakeAmount = poolState.stakeAmount - userState.stakeAmount; // stake in pool minus the user's existing stake
             uint256 stakeAmountUpdated;
             {
@@ -196,14 +262,16 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             uint256 userStakeXTimeUpdated = _computeStakeXTime(
                 keys[i], userState.stakeXTimeStored, userState.stakeAmount, userState.lastStakeAmountUpdateTimestamp
             );
-            userStates[id][msgSender] = StakeState({
+            rushPoolUserStates[id][msgSender] = RushStakeState({
                 stakeAmount: stakeAmountUpdated,
                 stakeXTimeStored: userStakeXTimeUpdated,
                 lastStakeAmountUpdateTimestamp: block.timestamp
             });
             if (userState.stakeAmount == 0) {
                 // user didn't have any stake in this pool before
-                ++userPoolCounts[msgSender][keys[i].stakeToken];
+                unchecked {
+                    ++userPoolCounts[msgSender][keys[i].stakeToken];
+                }
             }
 
             // update pool state
@@ -215,7 +283,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 poolState.stakeAmount,
                 FixedPointMathLib.max(poolState.lastStakeAmountUpdateTimestamp, keys[i].startTimestamp)
             );
-            poolStates[id] = StakeState({
+            rushPoolStates[id] = RushStakeState({
                 stakeAmount: remainderStakeAmount + stakeAmountUpdated,
                 stakeXTimeStored: poolStakeXTimeUpdated,
                 lastStakeAmountUpdateTimestamp: block.timestamp
@@ -224,7 +292,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
     }
 
     /// @inheritdoc IMasterBunni
-    function exit(RushPoolKey[] calldata keys) external nonReentrant {
+    function exitRushPool(RushPoolKey[] calldata keys) external nonReentrant {
         address msgSender = LibMulticaller.senderOrSigner();
 
         for (uint256 i; i < keys.length; i++) {
@@ -234,7 +302,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             }
 
             RushPoolId id = keys[i].toId();
-            StakeState memory userState = userStates[id][msgSender];
+            RushStakeState memory userState = rushPoolUserStates[id][msgSender];
 
             // user should have staked in the pool
             if (userState.stakeAmount == 0) {
@@ -247,23 +315,153 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             uint256 userStakeXTimeUpdated = _computeStakeXTime(
                 keys[i], userState.stakeXTimeStored, userState.stakeAmount, userState.lastStakeAmountUpdateTimestamp
             );
-            userStates[id][msgSender] = StakeState({
+            rushPoolUserStates[id][msgSender] = RushStakeState({
                 stakeAmount: 0,
                 stakeXTimeStored: userStakeXTimeUpdated,
                 lastStakeAmountUpdateTimestamp: latestActiveTimestamp
             });
-            --userPoolCounts[msgSender][keys[i].stakeToken];
+            unchecked {
+                --userPoolCounts[msgSender][keys[i].stakeToken];
+            }
 
             // update pool state
-            StakeState memory poolState = poolStates[id];
+            RushStakeState memory poolState = rushPoolStates[id];
             uint256 poolStakeXTimeUpdated = _computeStakeXTime(
                 keys[i], poolState.stakeXTimeStored, poolState.stakeAmount, poolState.lastStakeAmountUpdateTimestamp
             );
-            poolStates[id] = StakeState({
+            rushPoolStates[id] = RushStakeState({
                 stakeAmount: poolState.stakeAmount - userState.stakeAmount,
                 stakeXTimeStored: poolStakeXTimeUpdated,
                 lastStakeAmountUpdateTimestamp: latestActiveTimestamp
             });
+        }
+    }
+
+    /// @inheritdoc IMasterBunni
+    function joinRecurPool(RecurPoolKey[] calldata keys) external nonReentrant {
+        address msgSender = LibMulticaller.senderOrSigner();
+
+        for (uint256 i; i < keys.length; i++) {
+            RecurPoolKey calldata key = keys[i];
+
+            /// -----------------------------------------------------------------------
+            /// Validation
+            /// -----------------------------------------------------------------------
+
+            // user should have non-zero balance
+            uint256 balance = ERC20(address(key.stakeToken)).balanceOf(msgSender);
+            if (balance == 0) {
+                continue;
+            }
+
+            // user's balance should be locked with this contract as the unlocker
+            if (
+                !key.stakeToken.isLocked(msgSender)
+                    || key.stakeToken.unlockerOf(msgSender) != IERC20Unlocker(address(this))
+            ) {
+                continue;
+            }
+
+            /// -----------------------------------------------------------------------
+            /// Storage loads
+            /// -----------------------------------------------------------------------
+
+            RecurPoolId id = key.toId();
+            RecurPoolState storage state = recurPoolStates[id];
+            uint256 stakedBalance = state.balanceOf[msgSender];
+
+            // can't stake in a pool twice
+            if (balance <= stakedBalance) {
+                continue;
+            }
+
+            uint64 lastUpdateTime = state.lastUpdateTime;
+            uint64 periodFinish = state.periodFinish;
+            uint64 lastTimeRewardApplicable = block.timestamp < periodFinish ? uint64(block.timestamp) : periodFinish;
+            uint256 totalSupply = state.totalSupply;
+            uint256 rewardPerTokenUpdated = _rewardPerToken(
+                state.rewardPerTokenStored, totalSupply, lastTimeRewardApplicable, lastUpdateTime, state.rewardRate
+            );
+
+            /// -----------------------------------------------------------------------
+            /// State updates
+            /// -----------------------------------------------------------------------
+
+            // accrue rewards
+            state.rewardPerTokenStored = rewardPerTokenUpdated;
+            state.lastUpdateTime = lastTimeRewardApplicable;
+            state.rewards[msgSender] = _earned(
+                state.userRewardPerTokenPaid[msgSender], stakedBalance, rewardPerTokenUpdated, state.rewards[msgSender]
+            );
+            state.userRewardPerTokenPaid[msgSender] = rewardPerTokenUpdated;
+
+            // stake
+            state.totalSupply = totalSupply - stakedBalance + balance;
+            state.balanceOf[msgSender] = balance;
+
+            // increment user pool count
+            unchecked {
+                ++userPoolCounts[msgSender][key.stakeToken];
+            }
+        }
+    }
+
+    /// @inheritdoc IMasterBunni
+    function exitRecurPool(RecurPoolKey[] calldata keys) external nonReentrant {
+        address msgSender = LibMulticaller.senderOrSigner();
+
+        for (uint256 i; i < keys.length; i++) {
+            RecurPoolKey calldata key = keys[i];
+
+            /// -----------------------------------------------------------------------
+            /// Validation
+            /// -----------------------------------------------------------------------
+
+            RecurPoolId id = key.toId();
+            RecurPoolState storage state = recurPoolStates[id];
+            uint256 stakedBalance = state.balanceOf[msgSender];
+
+            // user should have staked in the pool
+            if (stakedBalance == 0) {
+                continue;
+            }
+
+            /// -----------------------------------------------------------------------
+            /// Storage loads
+            /// -----------------------------------------------------------------------
+
+            uint64 lastUpdateTime = state.lastUpdateTime;
+            uint64 periodFinish = state.periodFinish;
+            uint64 lastTimeRewardApplicable = block.timestamp < periodFinish ? uint64(block.timestamp) : periodFinish;
+            uint256 totalSupply = state.totalSupply;
+            uint256 rewardPerTokenUpdated = _rewardPerToken(
+                state.rewardPerTokenStored, totalSupply, lastTimeRewardApplicable, lastUpdateTime, state.rewardRate
+            );
+
+            /// -----------------------------------------------------------------------
+            /// State updates
+            /// -----------------------------------------------------------------------
+
+            // accrue rewards
+            state.rewardPerTokenStored = rewardPerTokenUpdated;
+            state.lastUpdateTime = lastTimeRewardApplicable;
+            state.rewards[msgSender] = _earned(
+                state.userRewardPerTokenPaid[msgSender], stakedBalance, rewardPerTokenUpdated, state.rewards[msgSender]
+            );
+            state.userRewardPerTokenPaid[msgSender] = rewardPerTokenUpdated;
+
+            // remove stake
+            delete state.balanceOf[msgSender];
+            // total supply has 1:1 relationship with staked amounts
+            // so can't ever underflow
+            unchecked {
+                state.totalSupply = totalSupply - stakedBalance;
+            }
+
+            // decrement user pool count
+            unchecked {
+                --userPoolCounts[msgSender][key.stakeToken];
+            }
         }
     }
 
@@ -292,7 +490,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
     }
 
     /// @inheritdoc IMasterBunni
-    function claim(ClaimParams[] calldata params, address recipient) external nonReentrant {
+    function claimRushPool(RushClaimParams[] calldata params, address recipient) external nonReentrant {
         address msgSender = LibMulticaller.senderOrSigner();
 
         for (uint256 i; i < params.length; i++) {
@@ -303,9 +501,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 // load state
                 RushPoolKey calldata key = params[i].keys[j];
                 RushPoolId id = key.toId();
-                StakeState memory userState = userStates[id][msgSender];
-                uint256 incentiveAmount = incentiveAmounts[id][incentiveToken];
-                uint256 rewardPaid = userRewardPaid[id][msgSender][incentiveToken];
+                RushStakeState memory userState = rushPoolUserStates[id][msgSender];
+                uint256 incentiveAmount = rushPoolIncentiveAmounts[id][incentiveToken];
+                uint256 rewardPaid = rushPoolUserRewardPaid[id][msgSender][incentiveToken];
 
                 // compute claimable reward
                 uint256 stakeXTimeUpdated = _computeStakeXTime(
@@ -315,10 +513,71 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 uint256 claimableReward = rewardAccrued - rewardPaid;
 
                 // update claim state
-                userRewardPaid[id][msgSender][incentiveToken] = rewardAccrued;
+                rushPoolUserRewardPaid[id][msgSender][incentiveToken] = rewardAccrued;
 
                 // accumulate claimable reward
                 totalClaimableAmount += claimableReward;
+            }
+
+            // transfer incentive tokens to user
+            if (totalClaimableAmount != 0) {
+                incentiveToken.safeTransfer(recipient, totalClaimableAmount);
+            }
+        }
+    }
+
+    /// @inheritdoc IMasterBunni
+    function claimRecurPool(RecurClaimParams[] calldata params, address recipient) external nonReentrant {
+        address msgSender = LibMulticaller.senderOrSigner();
+
+        for (uint256 i; i < params.length; i++) {
+            address incentiveToken = params[i].incentiveToken;
+            uint256 totalClaimableAmount;
+
+            for (uint256 j; j < params[i].keys.length; j++) {
+                // load state
+                RecurPoolKey calldata key = params[i].keys[j];
+                RecurPoolId id = key.toId();
+                RecurPoolState storage state = recurPoolStates[id];
+
+                /// -----------------------------------------------------------------------
+                /// Storage loads
+                /// -----------------------------------------------------------------------
+
+                uint64 lastUpdateTime = state.lastUpdateTime;
+                uint64 periodFinish = state.periodFinish;
+                uint64 lastTimeRewardApplicable =
+                    block.timestamp < periodFinish ? uint64(block.timestamp) : periodFinish;
+                uint256 rewardPerTokenUpdated = _rewardPerToken(
+                    state.rewardPerTokenStored,
+                    state.totalSupply,
+                    lastTimeRewardApplicable,
+                    lastUpdateTime,
+                    state.rewardRate
+                );
+
+                /// -----------------------------------------------------------------------
+                /// State updates
+                /// -----------------------------------------------------------------------
+
+                // accrue rewards
+                uint256 reward = _earned(
+                    state.userRewardPerTokenPaid[msgSender],
+                    state.balanceOf[msgSender],
+                    rewardPerTokenUpdated,
+                    state.rewards[msgSender]
+                );
+                state.rewardPerTokenStored = rewardPerTokenUpdated;
+                state.lastUpdateTime = lastTimeRewardApplicable;
+                state.userRewardPerTokenPaid[msgSender] = rewardPerTokenUpdated;
+
+                if (reward != 0) {
+                    // delete accrued rewards
+                    delete state.rewards[msgSender];
+
+                    // accumulate claimable amount
+                    totalClaimableAmount += reward;
+                }
             }
 
             // transfer incentive tokens to user
@@ -333,16 +592,16 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
     /// -----------------------------------------------------------------------
 
     /// @inheritdoc IMasterBunni
-    function getClaimableReward(RushPoolKey calldata key, address user, address incentiveToken)
+    function getRushPoolClaimableReward(RushPoolKey calldata key, address user, address incentiveToken)
         external
         view
         returns (uint256 claimableReward)
     {
         // load state
         RushPoolId id = key.toId();
-        StakeState memory userState = userStates[id][user];
-        uint256 incentiveAmount = incentiveAmounts[id][incentiveToken];
-        uint256 rewardPaid = userRewardPaid[id][user][incentiveToken];
+        RushStakeState memory userState = rushPoolUserStates[id][user];
+        uint256 incentiveAmount = rushPoolIncentiveAmounts[id][incentiveToken];
+        uint256 rewardPaid = rushPoolUserRewardPaid[id][user][incentiveToken];
 
         // compute claimable reward
         uint256 stakeXTimeUpdated = _computeStakeXTime(
@@ -350,6 +609,43 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         );
         uint256 rewardAccrued = incentiveAmount.mulDiv(stakeXTimeUpdated, PRECISION);
         return rewardAccrued - rewardPaid;
+    }
+
+    /// @inheritdoc IMasterBunni
+    function getRecurPoolClaimableReward(RecurPoolKey calldata key, address user)
+        external
+        view
+        returns (uint256 claimableReward)
+    {
+        RecurPoolId id = key.toId();
+        RecurPoolState storage state = recurPoolStates[id];
+        uint64 periodFinish = state.periodFinish;
+        uint64 lastTimeRewardApplicable = block.timestamp < periodFinish ? uint64(block.timestamp) : periodFinish;
+        uint256 rewardPerTokenUpdated = _rewardPerToken(
+            state.rewardPerTokenStored,
+            state.totalSupply,
+            lastTimeRewardApplicable,
+            state.lastUpdateTime,
+            state.rewardRate
+        );
+        return _earned(
+            state.userRewardPerTokenPaid[user], state.balanceOf[user], rewardPerTokenUpdated, state.rewards[user]
+        );
+    }
+
+    /// @inheritdoc IMasterBunni
+    function recurPoolStakeBalanceOf(RecurPoolId id, address user) external view returns (uint256) {
+        return recurPoolStates[id].balanceOf[user];
+    }
+
+    /// @inheritdoc IMasterBunni
+    function recurPoolUserRewardPerTokenPaid(RecurPoolId id, address user) external view returns (uint256) {
+        return recurPoolStates[id].userRewardPerTokenPaid[user];
+    }
+
+    /// @inheritdoc IMasterBunni
+    function recurPoolRewards(RecurPoolId id, address user) external view returns (uint256) {
+        return recurPoolStates[id].rewards[user];
     }
 
     /// -----------------------------------------------------------------------
@@ -362,28 +658,29 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         LockCallbackData memory callbackData = abi.decode(data, (LockCallbackData));
         IERC20Lockable stakeToken = IERC20Lockable(msg.sender);
 
-        for (uint256 i; i < callbackData.keys.length; i++) {
+        for (uint256 i; i < callbackData.rushKeys.length; i++) {
+            RushPoolKey memory key = callbackData.rushKeys[i];
+
             // stakeToken of key should be msg.sender
-            if (callbackData.keys[i].stakeToken != stakeToken) {
+            if (key.stakeToken != stakeToken) {
                 continue;
             }
 
             // pool needs to be active
-            uint256 endTimestamp = callbackData.keys[i].startTimestamp + callbackData.keys[i].programLength;
-            if (block.timestamp < callbackData.keys[i].startTimestamp || block.timestamp > endTimestamp) {
+            uint256 endTimestamp = key.startTimestamp + key.programLength;
+            if (block.timestamp < key.startTimestamp || block.timestamp > endTimestamp) {
                 continue;
             }
 
-            RushPoolId id = callbackData.keys[i].toId();
-            uint256 userStakeAmount = userStates[id][account].stakeAmount;
+            RushPoolId id = key.toId();
+            uint256 userStakeAmount = rushPoolUserStates[id][account].stakeAmount;
             // can't stake in a pool twice
             if (userStakeAmount != 0) {
                 continue;
             }
-            StakeState memory poolState = poolStates[id];
-            uint256 stakeAmount = poolState.stakeAmount + balance > callbackData.keys[i].stakeCap
-                ? callbackData.keys[i].stakeCap - poolState.stakeAmount
-                : balance;
+            RushStakeState memory poolState = rushPoolStates[id];
+            uint256 stakeAmount =
+                poolState.stakeAmount + balance > key.stakeCap ? key.stakeCap - poolState.stakeAmount : balance;
             // ensure there is capacity left
             if (stakeAmount == 0) {
                 continue;
@@ -393,24 +690,75 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             // leave stakeXTime unchanged since stakeAmount was zero since the last update
             // block.timestamp is at most endTimestamp
             // since we already checked that the program is active
-            userStates[id][account].stakeAmount = stakeAmount;
-            userStates[id][account].lastStakeAmountUpdateTimestamp = block.timestamp;
-            ++userPoolCounts[account][callbackData.keys[i].stakeToken];
+            rushPoolUserStates[id][account].stakeAmount = stakeAmount;
+            rushPoolUserStates[id][account].lastStakeAmountUpdateTimestamp = block.timestamp;
+            unchecked {
+                ++userPoolCounts[account][key.stakeToken];
+            }
 
             // update pool state
             // poolState.lastStakeAmountUpdateTimestamp might be 0 if the pool has never had stakers
             // so we bound it by the start timestamp of the program
             uint256 stakeXTimeUpdated = _computeStakeXTime(
-                callbackData.keys[i],
+                key,
                 poolState.stakeXTimeStored,
                 poolState.stakeAmount,
-                FixedPointMathLib.max(poolState.lastStakeAmountUpdateTimestamp, callbackData.keys[i].startTimestamp)
+                FixedPointMathLib.max(poolState.lastStakeAmountUpdateTimestamp, key.startTimestamp)
             );
-            poolStates[id] = StakeState({
+            rushPoolStates[id] = RushStakeState({
                 stakeAmount: poolState.stakeAmount + stakeAmount,
                 stakeXTimeStored: stakeXTimeUpdated,
                 lastStakeAmountUpdateTimestamp: block.timestamp
             });
+        }
+
+        for (uint256 i; i < callbackData.recurKeys.length; i++) {
+            RecurPoolKey memory key = callbackData.recurKeys[i];
+
+            // stakeToken of key should be msg.sender
+            if (key.stakeToken != stakeToken) {
+                continue;
+            }
+
+            /// -----------------------------------------------------------------------
+            /// Storage loads
+            /// -----------------------------------------------------------------------
+
+            RecurPoolId id = key.toId();
+            RecurPoolState storage state = recurPoolStates[id];
+            uint256 stakedBalance = state.balanceOf[account];
+
+            // can't stake in a pool twice
+            if (stakedBalance != 0) {
+                continue;
+            }
+
+            uint64 lastUpdateTime = state.lastUpdateTime;
+            uint64 periodFinish = state.periodFinish;
+            uint64 lastTimeRewardApplicable = block.timestamp < periodFinish ? uint64(block.timestamp) : periodFinish;
+            uint256 totalSupply = state.totalSupply;
+            uint256 rewardPerTokenUpdated = _rewardPerToken(
+                state.rewardPerTokenStored, totalSupply, lastTimeRewardApplicable, lastUpdateTime, state.rewardRate
+            );
+
+            /// -----------------------------------------------------------------------
+            /// State updates
+            /// -----------------------------------------------------------------------
+
+            // accrue rewards
+            // stakedBalance has been 0 so no need to update state.rewards[account]
+            state.rewardPerTokenStored = rewardPerTokenUpdated;
+            state.lastUpdateTime = lastTimeRewardApplicable;
+            state.userRewardPerTokenPaid[account] = rewardPerTokenUpdated;
+
+            // stake
+            state.totalSupply = totalSupply + balance;
+            state.balanceOf[account] = balance;
+
+            // increment user pool count
+            unchecked {
+                ++userPoolCounts[account][key.stakeToken];
+            }
         }
     }
 
@@ -444,5 +792,29 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             FixedPointMathLib.min(block.timestamp, endTimestamp) - lastStakeAmountUpdateTimestamp;
         return stakeXTimeStored
             + PRECISION.mulDiv(stakeAmount, key.stakeCap).mulDiv(timeElapsedSinceLastUpdate, key.programLength);
+    }
+
+    function _earned(
+        uint256 userRewardPerTokenPaid,
+        uint256 accountBalance,
+        uint256 rewardPerToken,
+        uint256 accountRewards
+    ) internal pure returns (uint256) {
+        return FixedPointMathLib.fullMulDiv(accountBalance, rewardPerToken - userRewardPerTokenPaid, PRECISION)
+            + accountRewards;
+    }
+
+    function _rewardPerToken(
+        uint256 rewardPerTokenStored,
+        uint256 totalSupply,
+        uint256 lastTimeRewardApplicable,
+        uint256 lastUpdateTime,
+        uint256 rewardRate
+    ) internal pure returns (uint256) {
+        if (totalSupply == 0) {
+            return rewardPerTokenStored;
+        }
+        return rewardPerTokenStored
+            + FixedPointMathLib.fullMulDiv((lastTimeRewardApplicable - lastUpdateTime) * PRECISION, rewardRate, totalSupply);
     }
 }
