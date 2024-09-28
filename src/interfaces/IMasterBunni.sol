@@ -64,12 +64,15 @@ interface IMasterBunni is IERC20Unlocker {
         RushPoolKey[] keys;
     }
 
+    /// @member incentiveToken The incentive token to claim.
+    /// @member keys The list of RecurPools to claim the incentives for.
     struct RecurClaimParams {
         address incentiveToken;
         RecurPoolKey[] keys;
     }
 
-    /// @member keys The list of RushPools to stake into.
+    /// @member rushKeys The list of RushPools to stake into.
+    /// @member recurKeys The list of RecurPools to stake into.
     struct LockCallbackData {
         RushPoolKey[] rushKeys;
         RecurPoolKey[] recurKeys;
