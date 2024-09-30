@@ -9,10 +9,10 @@ import "../src/MasterBunni.sol";
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 import {ERC20ReferrerMock} from "./mocks/ERC20ReferrerMock.sol";
 
-contract MasterBunniTest is Test {
+contract MasterBunniRushPoolTest is Test {
     using FixedPointMathLib for *;
 
-    uint256 internal constant PRECISION = 1e30;
+    uint256 internal constant PRECISION = 1e36;
     address internal constant RECIPIENT = address(0xB0B);
     uint256 internal constant MAX_REL_ERROR = 1e3;
 

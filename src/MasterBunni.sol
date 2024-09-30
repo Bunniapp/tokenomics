@@ -22,7 +22,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
     using FixedPointMathLib for *;
     using SafeTransferLib for address;
 
-    uint256 internal constant PRECISION = 1e30;
+    uint256 internal constant PRECISION = 1e36;
+    uint256 internal constant REWARD_RATE_PRECISION = 1e6;
+    uint256 internal constant PRECISION_DIV_REWARD_RATE_PRECISION = PRECISION / REWARD_RATE_PRECISION;
 
     mapping(address user => mapping(IERC20Lockable stakeToken => uint256)) public userPoolCounts;
 
@@ -188,14 +190,14 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             // record new reward
             uint256 newRewardRate;
             if (block.timestamp >= periodFinish) {
-                newRewardRate = params[i].incentiveAmount / key.duration;
+                newRewardRate = params[i].incentiveAmount.mulDiv(REWARD_RATE_PRECISION, key.duration);
             } else {
                 uint256 remaining = periodFinish - block.timestamp;
-                uint256 leftover = remaining * rewardRate;
-                newRewardRate = (params[i].incentiveAmount + leftover) / key.duration;
+                uint256 leftover = remaining.mulDiv(rewardRate, REWARD_RATE_PRECISION);
+                newRewardRate = (params[i].incentiveAmount + leftover).mulDiv(REWARD_RATE_PRECISION, key.duration);
             }
             // prevent overflow when computing rewardPerToken
-            if (newRewardRate >= ((type(uint256).max / PRECISION) / key.duration)) {
+            if (newRewardRate >= ((type(uint256).max / PRECISION_DIV_REWARD_RATE_PRECISION) / key.duration)) {
                 revert MasterBunni__AmountTooLarge();
             }
             state.rewardRate = newRewardRate;
@@ -814,7 +816,10 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         if (totalSupply == 0) {
             return rewardPerTokenStored;
         }
+        // mulDiv won't overflow since we check that rewardRate is less than (type(uint256).max / PRECISION_DIV_REWARD_RATE_PRECISION / duration)
         return rewardPerTokenStored
-            + FixedPointMathLib.fullMulDiv((lastTimeRewardApplicable - lastUpdateTime) * PRECISION, rewardRate, totalSupply);
+            + FixedPointMathLib.mulDiv(
+                (lastTimeRewardApplicable - lastUpdateTime) * PRECISION_DIV_REWARD_RATE_PRECISION, rewardRate, totalSupply
+            );
     }
 }
