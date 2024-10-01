@@ -73,6 +73,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         if (totalIncentiveAmount != 0) {
             incentiveToken.safeTransferFrom(msgSender, address(this), totalIncentiveAmount);
         }
+
+        // emit event
+        emit DepositIncentive(msgSender, incentiveToken, recipient, params, totalIncentiveAmount);
     }
 
     /// @inheritdoc IMasterBunni
@@ -106,6 +109,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         if (totalWithdrawnAmount != 0) {
             incentiveToken.safeTransfer(recipient, totalWithdrawnAmount);
         }
+
+        // emit event
+        emit WithdrawIncentive(msgSender, incentiveToken, recipient, params, totalWithdrawnAmount);
     }
 
     /// @inheritdoc IMasterBunni
@@ -149,6 +155,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             if (totalRefundAmount != 0) {
                 incentiveToken.safeTransfer(recipient, totalRefundAmount);
             }
+
+            // emit event
+            emit RefundIncentive(msgSender, incentiveToken, recipient, totalRefundAmount);
         }
     }
 
@@ -213,6 +222,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         if (totalIncentiveAmount != 0) {
             incentiveToken.safeTransferFrom(msgSender, address(this), totalIncentiveAmount);
         }
+
+        // emit event
+        emit IncentivizeRecurPool(msgSender, incentiveToken, params, totalIncentiveAmount);
     }
 
     /// -----------------------------------------------------------------------
@@ -292,6 +304,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 stakeXTimeStored: poolStakeXTimeUpdated,
                 lastStakeAmountUpdateTimestamp: block.timestamp
             });
+
+            // emit event
+            emit JoinRushPool(msgSender, keys[i]);
         }
     }
 
@@ -338,6 +353,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 stakeXTimeStored: poolStakeXTimeUpdated,
                 lastStakeAmountUpdateTimestamp: latestActiveTimestamp
             });
+
+            // emit event
+            emit ExitRushPool(msgSender, keys[i]);
         }
     }
 
@@ -410,6 +428,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             unchecked {
                 ++userPoolCounts[msgSender][key.stakeToken];
             }
+
+            // emit event
+            emit JoinRecurPool(msgSender, keys[i]);
         }
     }
 
@@ -472,6 +493,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             unchecked {
                 --userPoolCounts[msgSender][key.stakeToken];
             }
+
+            // emit event
+            emit ExitRecurPool(msgSender, keys[i]);
         }
     }
 
@@ -496,6 +520,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
             // unlock stake token
             stakeTokens[i].unlock(msgSender);
+
+            // emit event
+            emit Unlock(msgSender, stakeTokens[i]);
         }
     }
 
@@ -537,6 +564,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             if (totalClaimableAmount != 0) {
                 incentiveToken.safeTransfer(recipient, totalClaimableAmount);
             }
+
+            // emit event
+            emit ClaimReward(msgSender, incentiveToken, recipient, totalClaimableAmount);
         }
     }
 
@@ -601,6 +631,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             if (totalClaimableAmount != 0) {
                 incentiveToken.safeTransfer(recipient, totalClaimableAmount);
             }
+
+            // emit event
+            emit ClaimReward(msgSender, incentiveToken, recipient, totalClaimableAmount);
         }
     }
 
@@ -741,6 +774,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 stakeXTimeStored: stakeXTimeUpdated,
                 lastStakeAmountUpdateTimestamp: block.timestamp
             });
+
+            // emit event
+            emit JoinRushPool(account, key);
         }
 
         for (uint256 i; i < callbackData.recurKeys.length; i++) {
@@ -792,6 +828,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             unchecked {
                 ++userPoolCounts[account][key.stakeToken];
             }
+
+            // emit event
+            emit JoinRecurPool(account, key);
         }
     }
 

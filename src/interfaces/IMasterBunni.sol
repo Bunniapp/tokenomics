@@ -15,6 +15,47 @@ import {IERC20Lockable} from "../external/IERC20Lockable.sol";
 interface IMasterBunni is IERC20Unlocker {
     error MasterBunni__AmountTooLarge();
 
+    event DepositIncentive(
+        address indexed sender,
+        address indexed incentiveToken,
+        address indexed recipient,
+        RushIncentiveParams[] params,
+        uint256 totalIncentiveAmount
+    );
+
+    event WithdrawIncentive(
+        address indexed sender,
+        address indexed incentiveToken,
+        address indexed recipient,
+        RushIncentiveParams[] params,
+        uint256 totalWithdrawnAmount
+    );
+
+    event RefundIncentive(
+        address indexed sender, address indexed incentiveToken, address indexed recipient, uint256 totalRefundAmount
+    );
+
+    event IncentivizeRecurPool(
+        address indexed sender,
+        address indexed incentiveToken,
+        RecurIncentiveParams[] params,
+        uint256 totalIncentiveAmount
+    );
+
+    event JoinRushPool(address indexed sender, RushPoolKey key);
+
+    event ExitRushPool(address indexed sender, RushPoolKey key);
+
+    event JoinRecurPool(address indexed sender, RecurPoolKey key);
+
+    event ExitRecurPool(address indexed sender, RecurPoolKey key);
+
+    event Unlock(address indexed sender, IERC20Lockable indexed stakeToken);
+
+    event ClaimReward(
+        address indexed sender, address indexed incentiveToken, address indexed recipient, uint256 totalClaimableAmount
+    );
+
     /// @member stakeAmount The amount of stake tokens staked.
     /// @member stakeXTimeStored The cumulativestake x time value since the last stake amount update.
     /// @member lastStakeAmountUpdateTimestamp The timestamp of the last stake amount update in seconds. Must be at most the end timestamp of the program.
