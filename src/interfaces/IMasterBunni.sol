@@ -191,6 +191,16 @@ interface IMasterBunni is IERC20Unlocker {
         view
         returns (uint256 claimableReward);
 
+    /// @notice Returns true if the key is valid.
+    /// @param key The RushPoolKey or RecurPoolKey to check.
+    /// @return isValid True if the key is valid, false otherwise.
+    function isValidRushPoolKey(RushPoolKey calldata key) external pure returns (bool isValid);
+
+    /// @notice Returns true if the key is valid.
+    /// @param key The RushPoolKey or RecurPoolKey to check.
+    /// @return isValid True if the key is valid, false otherwise.
+    function isValidRecurPoolKey(RecurPoolKey calldata key) external pure returns (bool isValid);
+
     /// -----------------------------------------------------------------------
     /// Incentivizer actions
     /// -----------------------------------------------------------------------

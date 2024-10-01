@@ -52,8 +52,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
         // record incentive in each pool
         for (uint256 i; i < params.length; i++) {
-            if (block.timestamp >= params[i].key.startTimestamp) {
-                // program is already active, skip
+            if (!isValidRushPoolKey(params[i].key) || block.timestamp >= params[i].key.startTimestamp) {
+                // key is invalid or program is already active, skip
                 continue;
             }
 
@@ -85,8 +85,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
         // subtract incentive tokens from each pool
         for (uint256 i; i < params.length; i++) {
-            if (block.timestamp >= params[i].key.startTimestamp) {
-                // program is already active, skip
+            if (!isValidRushPoolKey(params[i].key) || block.timestamp >= params[i].key.startTimestamp) {
+                // key is invalid or program is already active, skip
                 continue;
             }
 
@@ -118,7 +118,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             for (uint256 j; j < params[i].keys.length; j++) {
                 // the program should be over
                 RushPoolKey calldata key = params[i].keys[j];
-                if (block.timestamp <= key.startTimestamp + key.programLength) {
+                if (!isValidRushPoolKey(key) || block.timestamp <= key.startTimestamp + key.programLength) {
                     continue;
                 }
 
@@ -166,11 +166,13 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
             if (params[i].incentiveAmount == 0) continue;
 
+            RecurPoolKey calldata key = params[i].key;
+            if (!isValidRecurPoolKey(key)) continue;
+
             /// -----------------------------------------------------------------------
             /// Storage loads
             /// -----------------------------------------------------------------------
 
-            RecurPoolKey calldata key = params[i].key;
             RecurPoolId id = key.toId();
             RecurPoolState storage state = recurPoolStates[id];
             uint64 lastUpdateTime = state.lastUpdateTime;
@@ -224,7 +226,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         for (uint256 i; i < keys.length; i++) {
             // pool needs to be active
             if (
-                block.timestamp < keys[i].startTimestamp
+                !isValidRushPoolKey(keys[i]) || block.timestamp < keys[i].startTimestamp
                     || block.timestamp > keys[i].startTimestamp + keys[i].programLength
             ) {
                 continue;
@@ -299,7 +301,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
         for (uint256 i; i < keys.length; i++) {
             // should be past pool's start timestamp
-            if (block.timestamp < keys[i].startTimestamp) {
+            if (!isValidRushPoolKey(keys[i]) || block.timestamp < keys[i].startTimestamp) {
                 continue;
             }
 
@@ -349,6 +351,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             /// -----------------------------------------------------------------------
             /// Validation
             /// -----------------------------------------------------------------------
+
+            // key should be valid
+            if (!isValidRecurPoolKey(key)) continue;
 
             // user should have non-zero balance
             uint256 balance = ERC20(address(key.stakeToken)).balanceOf(msgSender);
@@ -418,6 +423,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             /// -----------------------------------------------------------------------
             /// Validation
             /// -----------------------------------------------------------------------
+
+            // key should be valid
+            if (!isValidRecurPoolKey(key)) continue;
 
             RecurPoolId id = key.toId();
             RecurPoolState storage state = recurPoolStates[id];
@@ -500,9 +508,13 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             uint256 totalClaimableAmount;
 
             for (uint256 j; j < params[i].keys.length; j++) {
-                // load state
                 RushPoolKey calldata key = params[i].keys[j];
                 RushPoolId id = key.toId();
+
+                // key should be valid
+                if (!isValidRushPoolKey(key)) continue;
+
+                // load state
                 RushStakeState memory userState = rushPoolUserStates[id][msgSender];
                 uint256 incentiveAmount = rushPoolIncentiveAmounts[id][incentiveToken];
                 uint256 rewardPaid = rushPoolUserRewardPaid[id][msgSender][incentiveToken];
@@ -537,15 +549,18 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             uint256 totalClaimableAmount;
 
             for (uint256 j; j < params[i].keys.length; j++) {
-                // load state
                 RecurPoolKey calldata key = params[i].keys[j];
                 RecurPoolId id = key.toId();
-                RecurPoolState storage state = recurPoolStates[id];
+
+                // key should be valid
+                if (!isValidRecurPoolKey(key)) continue;
 
                 /// -----------------------------------------------------------------------
                 /// Storage loads
                 /// -----------------------------------------------------------------------
 
+                // load state
+                RecurPoolState storage state = recurPoolStates[id];
                 uint64 lastUpdateTime = state.lastUpdateTime;
                 uint64 periodFinish = state.periodFinish;
                 uint64 lastTimeRewardApplicable =
@@ -599,6 +614,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         view
         returns (uint256 claimableReward)
     {
+        // no need to validate key since we just return 0 if it's invalid
         // load state
         RushPoolId id = key.toId();
         RushStakeState memory userState = rushPoolUserStates[id][user];
@@ -619,6 +635,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         view
         returns (uint256 claimableReward)
     {
+        // no need to validate key since we just return 0 if it's invalid
         RecurPoolId id = key.toId();
         RecurPoolState storage state = recurPoolStates[id];
         uint64 periodFinish = state.periodFinish;
@@ -650,6 +667,17 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         return recurPoolStates[id].rewards[user];
     }
 
+    /// @inheritdoc IMasterBunni
+    function isValidRushPoolKey(RushPoolKey memory key) public pure returns (bool) {
+        return address(key.stakeToken) != address(0) && key.stakeCap != 0 && key.startTimestamp != 0
+            && key.programLength != 0;
+    }
+
+    /// @inheritdoc IMasterBunni
+    function isValidRecurPoolKey(RecurPoolKey memory key) public pure returns (bool) {
+        return address(key.stakeToken) != address(0) && key.rewardToken != address(0) && key.duration != 0;
+    }
+
     /// -----------------------------------------------------------------------
     /// Callbacks
     /// -----------------------------------------------------------------------
@@ -662,15 +690,16 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
         for (uint256 i; i < callbackData.rushKeys.length; i++) {
             RushPoolKey memory key = callbackData.rushKeys[i];
-
-            // stakeToken of key should be msg.sender
-            if (key.stakeToken != stakeToken) {
-                continue;
-            }
-
-            // pool needs to be active
             uint256 endTimestamp = key.startTimestamp + key.programLength;
-            if (block.timestamp < key.startTimestamp || block.timestamp > endTimestamp) {
+
+            // validate key
+            // - key should be valid
+            // - pool should be active
+            // - stakeToken of key should be msg.sender
+            if (
+                !isValidRushPoolKey(key) || key.stakeToken != stakeToken || block.timestamp < key.startTimestamp
+                    || block.timestamp > endTimestamp
+            ) {
                 continue;
             }
 
@@ -717,8 +746,10 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         for (uint256 i; i < callbackData.recurKeys.length; i++) {
             RecurPoolKey memory key = callbackData.recurKeys[i];
 
-            // stakeToken of key should be msg.sender
-            if (key.stakeToken != stakeToken) {
+            // validate key
+            // - key should be valid
+            // - stakeToken of key should be msg.sender
+            if (!isValidRecurPoolKey(key) || key.stakeToken != stakeToken) {
                 continue;
             }
 

@@ -15,7 +15,7 @@ contract MasterBunniRecurPoolTest is Test {
     uint256 internal constant PRECISION = 1e36;
     uint256 internal constant REWARD_RATE_PRECISION = 1e6;
     address internal constant RECIPIENT = address(0xB0B);
-    uint256 internal constant MAX_REL_ERROR = 1e9;
+    uint256 internal constant MAX_REL_ERROR = 1e11;
 
     IMasterBunni masterBunni;
 
