@@ -12,6 +12,8 @@ verbosity = 4
 
 [rpc_endpoints]
 mainnet = "${RPC_URL_MAINNET}"
+sepolia = "${RPC_URL_SEPOLIA}"
 
 [etherscan]
 mainnet = {key = "${ETHERSCAN_KEY}"}
+sepolia = {key = "${ETHERSCAN_KEY}", url = "https://api-sepolia.etherscan.io/api"}
