@@ -25,6 +25,10 @@ Additionally, MasterBunni has a few other features:
 - Permissionless incentive adding
 - Staking the same tokens in any number of pools simultaneously
 
+### BUNNI
+
+BUNNI is the governance token of Bunni. It is a crosschain ERC20 token following the [XERC20](https://www.xerc20.com/) standard. BUNNI has a total supply of 1 billion tokens.
+
 ## Installation
 
 To install with [Foundry](https://github.com/gakonst/foundry):
