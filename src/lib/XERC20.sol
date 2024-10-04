@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity >=0.8.4 <0.9.0;
 
-import {IXERC20} from "../interfaces/IXERC20.sol";
-import {ERC20} from "solady/tokens/ERC20.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
 
-abstract contract XERC20 is ERC20, Ownable, IXERC20 {
+import {IXERC20} from "../interfaces/IXERC20.sol";
+import {ERC20Multicaller} from "./ERC20Multicaller.sol";
+
+abstract contract XERC20 is ERC20Multicaller, Ownable, IXERC20 {
     /**
      * @notice The duration it takes for the limits to fully replenish
      */
