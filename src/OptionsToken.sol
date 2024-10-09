@@ -64,9 +64,9 @@ contract OptionsToken is ERC20Multicaller, Ownable {
     /// Constructor
     /// -----------------------------------------------------------------------
 
-    constructor(address owner_, address paymentToken_, address underlyingToken_, IOracle oracle_, address treasury_) {
-        paymentToken = paymentToken_;
-        underlyingToken = underlyingToken_;
+    constructor(address owner_, IOracle oracle_, address treasury_) {
+        paymentToken = oracle_.paymentToken();
+        underlyingToken = oracle_.underlyingToken();
         oracle = oracle_;
         treasury = treasury_;
 
