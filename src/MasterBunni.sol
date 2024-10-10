@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.4;
 
-import "forge-std/console2.sol";
-
 import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 
 import {ERC20} from "solady/tokens/ERC20.sol";
@@ -71,7 +69,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
         // transfer incentive tokens to this contract
         if (totalIncentiveAmount != 0) {
-            incentiveToken.safeTransferFrom(msgSender, address(this), totalIncentiveAmount);
+            incentiveToken.safeTransferFrom2(msgSender, address(this), totalIncentiveAmount);
         }
 
         // emit event
@@ -201,26 +199,32 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             // record new reward
             uint256 newRewardRate;
             if (block.timestamp >= periodFinish) {
+                // current period is over
                 newRewardRate = params[i].incentiveAmount.mulDiv(REWARD_RATE_PRECISION, key.duration);
+
+                state.rewardRate = newRewardRate;
+                state.lastUpdateTime = uint64(block.timestamp);
+                state.periodFinish = uint64(block.timestamp + key.duration);
             } else {
+                // period is still active
+                // add the new reward to the existing period
                 uint256 remaining = periodFinish - block.timestamp;
-                uint256 leftover = remaining.mulDiv(rewardRate, REWARD_RATE_PRECISION);
-                newRewardRate = (params[i].incentiveAmount + leftover).mulDiv(REWARD_RATE_PRECISION, key.duration);
+                newRewardRate += params[i].incentiveAmount.mulDiv(REWARD_RATE_PRECISION, remaining);
+
+                state.rewardRate = newRewardRate;
+                state.lastUpdateTime = uint64(block.timestamp);
             }
             // prevent overflow when computing rewardPerToken
             if (newRewardRate >= ((type(uint256).max / PRECISION_DIV_REWARD_RATE_PRECISION) / key.duration)) {
                 revert MasterBunni__AmountTooLarge();
             }
-            state.rewardRate = newRewardRate;
-            state.lastUpdateTime = uint64(block.timestamp);
-            state.periodFinish = uint64(block.timestamp + key.duration);
 
             totalIncentiveAmount += params[i].incentiveAmount;
         }
 
         // transfer incentive tokens from msgSender to this contract
         if (totalIncentiveAmount != 0) {
-            incentiveToken.safeTransferFrom(msgSender, address(this), totalIncentiveAmount);
+            incentiveToken.safeTransferFrom2(msgSender, address(this), totalIncentiveAmount);
         }
 
         // emit event
