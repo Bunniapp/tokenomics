@@ -23,6 +23,15 @@
 #       maxtime (1 year)
 
 ##
+# SECTION IMPORTS
+##
+
+import LibMulticaller
+
+# !SECTION IMPORTS
+
+
+##
 # SECTION INTERFACES
 ##
 
@@ -69,6 +78,7 @@ struct LockedBalance:
 CREATE_LOCK_TYPE: constant(int128) = 1
 INCREASE_LOCK_AMOUNT: constant(int128) = 2
 INCREASE_UNLOCK_TIME: constant(int128) = 3
+AIRDROP_LOCK_TYPE: constant(int128) = 4
 
 event Deposit:
     provider: indexed(address)
@@ -91,6 +101,10 @@ event NewPendingAdmin:
 
 event NewAdmin:
     new_admin: address
+
+event ApproveAirdrop:
+    locker: indexed(address)
+    airdropper: indexed(address)
 
 # !SECTION EVENTS
 
@@ -140,6 +154,17 @@ slope_changes: public(HashMap[uint256, int128])  # time -> signed slope change
 point_history: public(Point[100000000000000000000000000000])  # epoch -> unsigned point
 
 # !SECTION STORAGE
+
+
+##
+# SECTION TRANSIENT STORAGE
+##
+
+# Lockers can allow another address to airdrop locked tokens to them and increase their lock time to the maximum.
+# Transient storage is used so that such approvals only last for the duration of the transaction.
+allow_airdrop: public(transient(HashMap[address, HashMap[address, bool]])) # locker -> airdropper -> allowed
+
+# !SECTION TRANSIENT STORAGE
 
 
 ##
@@ -238,7 +263,7 @@ def locked__end(_addr: address) -> uint256:
 @view
 def balanceOf(addr: address, _t: uint256 = block.timestamp) -> uint256:
     """
-    @notice Get the current voting power for `msg.sender`
+    @notice Get the current voting power for `addr`
     @dev Adheres to the ERC20 `balanceOf` interface for Aragon compatibility
     @param addr User wallet address
     @param _t Epoch time to return voting power at
@@ -371,16 +396,17 @@ def create_lock(_value: uint256, _unlock_time: uint256):
     @param _value Amount to deposit
     @param _unlock_time Epoch time when tokens unlock, rounded down to whole weeks
     """
-    self.assert_not_contract(msg.sender)
+    msg_sender: address = LibMulticaller.sender_or_signer()
+    self.assert_not_contract(msg_sender)
     unlock_time: uint256 = (_unlock_time // WEEK) * WEEK  # Locktime is rounded down to weeks
-    _locked: LockedBalance = self.locked[msg.sender]
+    _locked: LockedBalance = self.locked[msg_sender]
 
     assert _value > 0  # dev: need non-zero value
     assert _locked.amount == 0, "Withdraw old tokens first"
     assert unlock_time > block.timestamp, "Can only lock until time in the future"
     assert unlock_time <= block.timestamp + MAXTIME, "Voting lock can be 1 year max"
 
-    self._deposit_for(msg.sender, _value, unlock_time, _locked, CREATE_LOCK_TYPE)
+    self._deposit_for(msg_sender, _value, unlock_time, _locked, CREATE_LOCK_TYPE)
 
 
 @external
@@ -391,14 +417,15 @@ def increase_amount(_value: uint256):
             without modifying the unlock time
     @param _value Amount of tokens to deposit and add to the lock
     """
-    self.assert_not_contract(msg.sender)
-    _locked: LockedBalance = self.locked[msg.sender]
+    msg_sender: address = LibMulticaller.sender_or_signer()
+    self.assert_not_contract(msg_sender)
+    _locked: LockedBalance = self.locked[msg_sender]
 
     assert _value > 0  # dev: need non-zero value
     assert _locked.amount > 0, "No existing lock found"
     assert _locked.end > block.timestamp, "Cannot add to expired lock. Withdraw"
 
-    self._deposit_for(msg.sender, _value, 0, _locked, INCREASE_LOCK_AMOUNT)
+    self._deposit_for(msg_sender, _value, 0, _locked, INCREASE_LOCK_AMOUNT)
 
 
 @external
@@ -408,8 +435,9 @@ def increase_unlock_time(_unlock_time: uint256):
     @notice Extend the unlock time for `msg.sender` to `_unlock_time`
     @param _unlock_time New epoch time for unlocking
     """
-    self.assert_not_contract(msg.sender)
-    _locked: LockedBalance = self.locked[msg.sender]
+    msg_sender: address = LibMulticaller.sender_or_signer()
+    self.assert_not_contract(msg_sender)
+    _locked: LockedBalance = self.locked[msg_sender]
     unlock_time: uint256 = (_unlock_time // WEEK) * WEEK  # Locktime is rounded down to weeks
 
     assert _locked.end > block.timestamp, "Lock expired"
@@ -417,7 +445,7 @@ def increase_unlock_time(_unlock_time: uint256):
     assert unlock_time > _locked.end, "Can only increase lock duration"
     assert unlock_time <= block.timestamp + MAXTIME, "Voting lock can be 1 year max"
 
-    self._deposit_for(msg.sender, 0, unlock_time, _locked, INCREASE_UNLOCK_TIME)
+    self._deposit_for(msg_sender, 0, unlock_time, _locked, INCREASE_UNLOCK_TIME)
 
 
 @external
@@ -427,28 +455,81 @@ def withdraw():
     @notice Withdraw all tokens for `msg.sender`
     @dev Only possible if the lock has expired
     """
-    _locked: LockedBalance = self.locked[msg.sender]
+    msg_sender: address = LibMulticaller.sender_or_signer()
+    _locked: LockedBalance = self.locked[msg_sender]
     assert block.timestamp >= _locked.end, "The lock didn't expire"
     value: uint256 = convert(_locked.amount, uint256)
 
     old_locked: LockedBalance = _locked
     _locked.end = 0
     _locked.amount = 0
-    self.locked[msg.sender] = _locked
+    self.locked[msg_sender] = _locked
     supply_before: uint256 = self.supply
     self.supply = supply_before - value
 
     # old_locked can have either expired <= timestamp or zero end
     # _locked has only 0 end
     # Both can have >= 0 amount
-    self._checkpoint(msg.sender, old_locked, _locked)
+    self._checkpoint(msg_sender, old_locked, _locked)
 
-    assert extcall ERC20(TOKEN).transfer(msg.sender, value)
+    assert extcall ERC20(TOKEN).transfer(msg_sender, value)
 
-    log Withdraw(msg.sender, value, block.timestamp)
+    log Withdraw(msg_sender, value, block.timestamp)
     log Supply(supply_before, supply_before - value)
 
+
+@external
+def approve_airdrop(airdropper: address):
+    """
+    @notice Approve an address to airdrop locked tokens to the caller for the duration of the transaction.
+    @param airdropper The address that will be allowed to airdrop tokens.
+    """
+    msg_sender: address = LibMulticaller.sender_or_signer()
+    self.allow_airdrop[msg_sender][airdropper] = True
+    log ApproveAirdrop(msg_sender, airdropper)
+
 # !SECTION LOCKER ACTIONS
+
+
+##
+# SECTION AIRDROPPER ACTIONS
+##
+
+@external
+@nonreentrant
+def airdrop(_to: address, _value: uint256, _unlock_time: uint256):
+    msg_sender: address = LibMulticaller.sender_or_signer()
+    self.assert_not_contract(_to)
+    unlock_time: uint256 = (_unlock_time // WEEK) * WEEK  # Locktime is rounded down to weeks
+    _locked: LockedBalance = self.locked[_to]
+
+    assert _value > 0  # dev: need non-zero value
+    assert unlock_time > block.timestamp, "Can only lock until time in the future"
+    assert unlock_time <= block.timestamp + MAXTIME, "Voting lock can be 1 year max"
+    assert self.allow_airdrop[_to][msg_sender], "Airdrop not allowed"
+
+    # update supply
+    supply_before: uint256 = self.supply
+    self.supply = supply_before + _value
+
+    # update locked balance
+    old_locked: LockedBalance = _locked
+    # airdropper can only extend the lock time, not decrease it
+    _locked.amount += convert(_value, int128)
+    _locked.end = max(unlock_time, _locked.end)
+    self.locked[_to] = _locked
+
+    # checkpoint the user's locked balance
+    self._checkpoint(_to, old_locked, _locked)
+
+    # transfer tokens from the airdropper
+    assert extcall ERC20(TOKEN).transferFrom(msg_sender, self, _value)
+
+    log Deposit(_to, _value, _locked.end, AIRDROP_LOCK_TYPE, block.timestamp)
+    log Supply(supply_before, supply_before + _value)
+
+
+# !SECTION AIRDROPPER ACTIONS
 
 
 ##
@@ -792,4 +873,4 @@ def _deposit_for(_addr: address, _value: uint256, unlock_time: uint256, locked_b
     log Deposit(_addr, _value, _locked.end, type, block.timestamp)
     log Supply(supply_before, supply_before + _value)
 
-# !SECTION LOCKER ACTIONS
+# !SECTION INTERNAL UTILITIES
