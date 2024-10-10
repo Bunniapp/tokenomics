@@ -266,4 +266,26 @@ contract OptionsTokenTest is Test {
         vm.expectRevert(bytes4(keccak256("OptionsToken__PastDeadline()")));
         optionsToken.exercise(amount, expectedPaymentAmount, recipient, deadline);
     }
+
+    function test_setOracle_invalidOracle() public {
+        PoolKey memory key = oracle.getPoolKey();
+        key.currency0 = address(paymentToken);
+        key.currency1 = address(paymentToken); // this is different from the existing oracle
+        BunniHookOracle invalidOracle = new BunniHookOracle(
+            bunniHook,
+            key,
+            address(paymentToken),
+            address(paymentToken), // this is different from the existing oracle
+            owner,
+            ORACLE_MULTIPLIER,
+            ORACLE_SECS,
+            ORACLE_AGO,
+            ORACLE_MIN_PRICE
+        );
+
+        vm.startPrank(owner);
+        vm.expectRevert(OptionsToken.OptionsToken__InvalidOracle.selector);
+        optionsToken.setOracle(invalidOracle);
+        vm.stopPrank();
+    }
 }
