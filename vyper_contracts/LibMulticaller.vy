@@ -14,6 +14,6 @@ def sender_or_signer() -> address:
     if msg.sender in [MULTICALLER_WITH_SENDER, MULTICALLER_WITH_SIGNER]:
         response: Bytes[32] = raw_call(msg.sender, b"", max_outsize=32, is_static_call=True)
         # the sender is encoded in the last 20 bytes of the response
-        return convert(slice(convert(response, bytes32), 12, 20), address)
+        return extract32(response, 0, output_type=address)
     else:
         return msg.sender
