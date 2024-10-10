@@ -137,7 +137,7 @@ contract OptionsToken is ERC20Multicaller, Ownable {
     /// -----------------------------------------------------------------------
 
     function name() public pure override returns (string memory) {
-        return "Bunni Options Token";
+        return "Bunni Call Option Token";
     }
 
     function symbol() public pure override returns (string memory) {
