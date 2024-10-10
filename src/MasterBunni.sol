@@ -201,19 +201,25 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             // record new reward
             uint256 newRewardRate;
             if (block.timestamp >= periodFinish) {
+                // current period is over
                 newRewardRate = params[i].incentiveAmount.mulDiv(REWARD_RATE_PRECISION, key.duration);
+
+                state.rewardRate = newRewardRate;
+                state.lastUpdateTime = uint64(block.timestamp);
+                state.periodFinish = uint64(block.timestamp + key.duration);
             } else {
+                // period is still active
+                // add the new reward to the existing period
                 uint256 remaining = periodFinish - block.timestamp;
-                uint256 leftover = remaining.mulDiv(rewardRate, REWARD_RATE_PRECISION);
-                newRewardRate = (params[i].incentiveAmount + leftover).mulDiv(REWARD_RATE_PRECISION, key.duration);
+                newRewardRate += params[i].incentiveAmount.mulDiv(REWARD_RATE_PRECISION, remaining);
+
+                state.rewardRate = newRewardRate;
+                state.lastUpdateTime = uint64(block.timestamp);
             }
             // prevent overflow when computing rewardPerToken
             if (newRewardRate >= ((type(uint256).max / PRECISION_DIV_REWARD_RATE_PRECISION) / key.duration)) {
                 revert MasterBunni__AmountTooLarge();
             }
-            state.rewardRate = newRewardRate;
-            state.lastUpdateTime = uint64(block.timestamp);
-            state.periodFinish = uint64(block.timestamp + key.duration);
 
             totalIncentiveAmount += params[i].incentiveAmount;
         }

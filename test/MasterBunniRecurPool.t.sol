@@ -41,6 +41,33 @@ contract MasterBunniRecurPoolTest is Test {
         assertEq(incentiveToken.balanceOf(address(this)), 0);
         assertEq(incentiveToken.balanceOf(address(masterBunni)), incentiveAmount);
 
+        // check reward rate
+        (,, uint256 rewardRate,,) = masterBunni.recurPoolStates(id);
+        assertEq(rewardRate, incentiveAmount.mulDiv(REWARD_RATE_PRECISION, key.duration), "Incorrect reward rate");
+    }
+
+    function test_recurPool_incentivize_afterPeriodEnd(uint256 incentiveAmount) public {
+        vm.assume(incentiveAmount > 0 && incentiveAmount <= 1e36);
+
+        // create incentive
+        RecurPoolKey memory key = _createRecurIncentive(incentiveAmount, 7 days);
+        RecurPoolId id = key.toId();
+        ERC20Mock incentiveToken = ERC20Mock(address(key.rewardToken));
+
+        // wait until the end of the program
+        skip(10 days);
+
+        // add incentive again
+        incentiveToken.mint(address(this), incentiveAmount);
+        IMasterBunni.RecurIncentiveParams[] memory params = new IMasterBunni.RecurIncentiveParams[](1);
+        params[0] = IMasterBunni.RecurIncentiveParams({key: key, incentiveAmount: incentiveAmount});
+        masterBunni.incentivizeRecurPool(params, address(incentiveToken));
+
+        // check incentive deposit
+        assertEq(incentiveToken.balanceOf(address(this)), 0);
+        assertEq(incentiveToken.balanceOf(address(masterBunni)), incentiveAmount * 2);
+
+        // check reward rate
         (,, uint256 rewardRate,,) = masterBunni.recurPoolStates(id);
         assertEq(rewardRate, incentiveAmount.mulDiv(REWARD_RATE_PRECISION, key.duration), "Incorrect reward rate");
     }
