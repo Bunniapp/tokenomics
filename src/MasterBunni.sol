@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.4;
 
-import "forge-std/console2.sol";
-
 import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 
 import {ERC20} from "solady/tokens/ERC20.sol";
@@ -71,7 +69,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
         // transfer incentive tokens to this contract
         if (totalIncentiveAmount != 0) {
-            incentiveToken.safeTransferFrom(msgSender, address(this), totalIncentiveAmount);
+            incentiveToken.safeTransferFrom2(msgSender, address(this), totalIncentiveAmount);
         }
 
         // emit event
@@ -226,7 +224,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
         // transfer incentive tokens from msgSender to this contract
         if (totalIncentiveAmount != 0) {
-            incentiveToken.safeTransferFrom(msgSender, address(this), totalIncentiveAmount);
+            incentiveToken.safeTransferFrom2(msgSender, address(this), totalIncentiveAmount);
         }
 
         // emit event
