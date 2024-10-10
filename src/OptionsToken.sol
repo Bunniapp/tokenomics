@@ -29,6 +29,7 @@ contract OptionsToken is ERC20Multicaller, Ownable {
     /// -----------------------------------------------------------------------
 
     error OptionsToken__PastDeadline();
+    error OptionsToken__InvalidOracle();
     error OptionsToken__SlippageTooHigh();
 
     /// -----------------------------------------------------------------------
@@ -151,6 +152,11 @@ contract OptionsToken is ERC20Multicaller, Ownable {
     /// @notice Sets the oracle contract. Only callable by the owner.
     /// @param oracle_ The new oracle contract
     function setOracle(IOracle oracle_) external onlyOwner {
+        // ensure the new oracle has the same underlying token and payment token
+        if (oracle_.underlyingToken() != underlyingToken || oracle_.paymentToken() != paymentToken) {
+            revert OptionsToken__InvalidOracle();
+        }
+
         oracle = oracle_;
         emit SetOracle(oracle_);
     }
