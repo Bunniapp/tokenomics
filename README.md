@@ -56,7 +56,7 @@ forge build
 ### Testing
 
 ```
-forge test
+forge test -f sepolia
 ```
 
 ### Contract deployment

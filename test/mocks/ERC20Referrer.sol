@@ -4,7 +4,7 @@ pragma solidity ^0.8.4;
 
 import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 
-import {ERC20} from "./ERC20.sol";
+import {ERC20} from "../../src/lib/ERC20.sol";
 import {IERC20Lockable} from "../../src/external/IERC20Lockable.sol";
 import {IERC20Unlocker} from "../../src/external/IERC20Unlocker.sol";
 import {IERC20Referrer} from "../interfaces/IERC20Referrer.sol";
