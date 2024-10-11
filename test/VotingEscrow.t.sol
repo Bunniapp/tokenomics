@@ -31,13 +31,12 @@ contract VotingEscrowTest is Test, VyperDeployer {
 
         admin = makeAddr("admin");
         token = new ERC20Mock();
-        votingEscrow =
-            IVotingEscrow(deployContract("VotingEscrow", abi.encode(token, "Vote Escrowed BUNNI", "veBUNNI", admin)));
         smartWalletChecker = new SmartWalletChecker(admin, new address[](0));
-        vm.startPrank(admin);
-        votingEscrow.commit_smart_wallet_checker(address(smartWalletChecker));
-        votingEscrow.apply_smart_wallet_checker();
-        vm.stopPrank();
+        votingEscrow = IVotingEscrow(
+            deployContract(
+                "VotingEscrow", abi.encode(token, "Vote Escrowed BUNNI", "veBUNNI", admin, smartWalletChecker)
+            )
+        );
     }
 
     function test_airdrop_noLock(uint256 amount, uint256 lockTime) public {

@@ -172,7 +172,7 @@ allow_airdrop: public(transient(HashMap[address, HashMap[address, bool]])) # loc
 ##
 
 @deploy
-def __init__(token_addr: address, _name: String[64], _symbol: String[32], _admin: address):
+def __init__(token_addr: address, _name: String[64], _symbol: String[32], _admin: address, _smart_wallet_checker: address):
     """
     @notice Contract constructor
     @param token_addr The token to escrow
@@ -186,6 +186,7 @@ def __init__(token_addr: address, _name: String[64], _symbol: String[32], _admin
     self.admin = _admin
     self.point_history[0].blk = block.number
     self.point_history[0].ts = block.timestamp
+    self.smart_wallet_checker = _smart_wallet_checker
 
     _decimals: uint8 = staticcall IERC20Detailed(token_addr).decimals()
 
