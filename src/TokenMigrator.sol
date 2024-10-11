@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.11;
 
+import {LibMulticaller} from "multicaller/LibMulticaller.sol";
+
 import {Ownable} from "solady/auth/Ownable.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
@@ -21,7 +23,7 @@ contract TokenMigrator is Ownable {
     /// -----------------------------------------------------------------------
 
     event Migrate(address indexed sender, address indexed recipient, uint256 oldTokenAmount, uint256 newTokenAmount);
-    event WithdrawNewToken(address indexed sender, address indexed recipient, uint256 amount);
+    event WithdrawNewToken(address indexed recipient, uint256 amount);
     event SetNewTokenPerOldToken(uint256 newTokenPerOldToken);
 
     /// -----------------------------------------------------------------------
@@ -82,12 +84,13 @@ contract TokenMigrator is Ownable {
         newTokenAmount = oldTokenAmount.mulWad(newTokenPerOldToken);
 
         // transfer old tokens from sender and lock
-        oldToken.safeTransferFrom(msg.sender, address(this), oldTokenAmount);
+        address msgSender = LibMulticaller.senderOrSigner();
+        oldToken.safeTransferFrom2(msgSender, address(this), oldTokenAmount);
 
         // transfer new tokens to recipient
         newToken.safeTransfer(recipient, newTokenAmount);
 
-        emit Migrate(msg.sender, recipient, oldTokenAmount, newTokenAmount);
+        emit Migrate(msgSender, recipient, oldTokenAmount, newTokenAmount);
     }
 
     /// -----------------------------------------------------------------------
@@ -99,7 +102,7 @@ contract TokenMigrator is Ownable {
     /// @param recipient The address that will receive the new tokens
     function withdrawNewToken(uint256 amount, address recipient) external onlyOwner {
         newToken.safeTransfer(recipient, amount);
-        emit WithdrawNewToken(msg.sender, recipient, amount);
+        emit WithdrawNewToken(recipient, amount);
     }
 
     /// @notice Sets the amount of new tokens to give for each old token migrated. Only callable by owner.

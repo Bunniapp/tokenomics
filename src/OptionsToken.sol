@@ -102,7 +102,7 @@ contract OptionsToken is ERC20Multicaller, Ownable {
         address msgSender = LibMulticaller.senderOrSigner();
 
         // transfer underlying tokens from msgSender to this contract
-        underlyingToken.safeTransferFrom(msgSender, address(this), amount);
+        underlyingToken.safeTransferFrom2(msgSender, address(this), amount);
     }
 
     /// @notice Exercises options tokens to purchase the underlying tokens.
@@ -188,7 +188,7 @@ contract OptionsToken is ERC20Multicaller, Ownable {
         // transfer payment tokens from msgSender to the treasury
         paymentAmount = amount.mulWadUp(oracle.getPrice());
         if (paymentAmount > maxPaymentAmount) revert OptionsToken__SlippageTooHigh();
-        paymentToken.safeTransferFrom(msgSender, treasury, paymentAmount);
+        paymentToken.safeTransferFrom2(msgSender, treasury, paymentAmount);
 
         // transfer underlying tokens to recipient
         underlyingToken.safeTransfer(recipient, amount);
