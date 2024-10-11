@@ -3,6 +3,7 @@ pragma solidity ^0.8.4;
 
 import "forge-std/Test.sol";
 
+import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 import {MulticallerEtcher} from "multicaller/MulticallerEtcher.sol";
 import {MulticallerWithSender} from "multicaller/MulticallerWithSender.sol";
 import {MulticallerWithSigner} from "multicaller/MulticallerWithSigner.sol";
@@ -26,8 +27,10 @@ contract VotingEscrowTest is Test, VyperDeployer {
 
     function setUp() public {
         vm.warp(1e9);
-        multicallerWithSender = MulticallerEtcher.multicallerWithSender();
-        multicallerWithSigner = MulticallerEtcher.multicallerWithSigner();
+        MulticallerEtcher.multicallerWithSender();
+        MulticallerEtcher.multicallerWithSigner();
+        multicallerWithSender = MulticallerWithSender(payable(LibMulticaller.MULTICALLER_WITH_SENDER));
+        multicallerWithSigner = MulticallerWithSigner(payable(LibMulticaller.MULTICALLER_WITH_SIGNER));
 
         admin = makeAddr("admin");
         token = new ERC20Mock();

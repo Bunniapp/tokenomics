@@ -3,9 +3,8 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 
+import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 import {MulticallerEtcher} from "multicaller/MulticallerEtcher.sol";
-import {MulticallerWithSender} from "multicaller/MulticallerWithSender.sol";
-import {MulticallerWithSigner} from "multicaller/MulticallerWithSigner.sol";
 
 import {ERC20Mock} from "./mocks/ERC20Mock.sol";
 import {VyperDeployer} from "../src/lib/VyperDeployer.sol";
@@ -22,8 +21,6 @@ contract VeAirdropTest is Test, VyperDeployer {
     ERC20Mock token;
     IVotingEscrow votingEscrow;
     SmartWalletChecker smartWalletChecker;
-    MulticallerWithSender multicallerWithSender;
-    MulticallerWithSigner multicallerWithSigner;
 
     function setUp() public {
         vm.warp(1e9);
@@ -35,8 +32,8 @@ contract VeAirdropTest is Test, VyperDeployer {
                 "VotingEscrow", abi.encode(token, "Vote Escrowed BUNNI", "veBUNNI", admin, smartWalletChecker)
             )
         );
-        multicallerWithSender = MulticallerEtcher.multicallerWithSender();
-        multicallerWithSigner = MulticallerEtcher.multicallerWithSigner();
+        MulticallerEtcher.multicallerWithSender();
+        MulticallerEtcher.multicallerWithSigner();
     }
 
     function test_claim(uint256 amount, uint8 treeHeightMinusOne, uint256 randomness) public {
