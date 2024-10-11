@@ -11,7 +11,7 @@ contract DeployScript is CREATE3Script {
         uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
 
         address oldToken = vm.envAddress("OLD_TOKEN");
-        address newToken = vm.envAddress("NEW_TOKEN");
+        address newToken = getCreate3Contract("BUNNI");
         uint256 newTokenPerOldToken = vm.envUint("NEW_TOKEN_PER_OLD_TOKEN");
         address owner = vm.envAddress("OWNER");
 
