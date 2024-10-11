@@ -27,9 +27,6 @@ contract VeAirdropTest is Test, VyperDeployer {
 
     function setUp() public {
         vm.warp(1e9);
-        multicallerWithSender = MulticallerEtcher.multicallerWithSender();
-        multicallerWithSigner = MulticallerEtcher.multicallerWithSigner();
-
         admin = makeAddr("admin");
         token = new ERC20Mock();
         smartWalletChecker = new SmartWalletChecker(admin, new address[](0));
@@ -38,144 +35,60 @@ contract VeAirdropTest is Test, VyperDeployer {
                 "VotingEscrow", abi.encode(token, "Vote Escrowed BUNNI", "veBUNNI", admin, smartWalletChecker)
             )
         );
+        multicallerWithSender = MulticallerEtcher.multicallerWithSender();
+        multicallerWithSigner = MulticallerEtcher.multicallerWithSigner();
     }
 
     function test_claim(uint256 amount, uint8 treeHeightMinusOne, uint256 randomness) public {
-        vm.assume(amount > 0 && amount <= MAX_SUPPLY);
         address claimer = makeAddr("claimer");
+        (VeAirdrop airdrop, bytes32[] memory proof) = setupAirdrop(amount, treeHeightMinusOne, randomness, claimer);
 
-        // add locker to smart wallet checker whitelist
-        vm.prank(admin);
-        smartWalletChecker.allowlistAddress(claimer);
-
-        // generate merkle proof
-        (bytes32 root, bytes32[] memory proof) = MerkleTreeGenerator.generateMerkleTree(
-            keccak256(abi.encodePacked(claimer, amount)), treeHeightMinusOne, keccak256(abi.encodePacked(randomness))
-        );
-
-        // create airdrop
-        VeAirdrop airdrop = new VeAirdrop(root, block.timestamp + 1 days, block.timestamp + 2 days, votingEscrow, admin);
-
-        // warp to after airdrop starts
-        skip(1 days);
-
-        // mint tokens to airdrop contract
-        token.mint(address(airdrop), amount);
-
-        // approve airdrop contract to airdrop tokens
-        vm.prank(claimer);
-        votingEscrow.approve_airdrop(address(airdrop));
-
-        // claim airdrop
+        // Claim airdrop
         vm.prank(claimer);
         airdrop.claim(amount, proof);
 
-        // check result
+        // Check result
         assertEq(uint256(uint128(votingEscrow.locked(claimer).amount)), amount);
         assertEq(votingEscrow.locked(claimer).end, (block.timestamp + LOCK_TIME) / (1 weeks) * (1 weeks));
         assertEq(token.balanceOf(address(votingEscrow)), amount);
     }
 
     function test_claim_alreadyClaimed(uint256 amount, uint8 treeHeightMinusOne, uint256 randomness) public {
-        vm.assume(amount > 0 && amount <= MAX_SUPPLY);
         address claimer = makeAddr("claimer");
+        (VeAirdrop airdrop, bytes32[] memory proof) = setupAirdrop(amount, treeHeightMinusOne, randomness, claimer);
 
-        // add locker to smart wallet checker whitelist
-        vm.prank(admin);
-        smartWalletChecker.allowlistAddress(claimer);
-
-        // generate merkle proof
-        (bytes32 root, bytes32[] memory proof) = MerkleTreeGenerator.generateMerkleTree(
-            keccak256(abi.encodePacked(claimer, amount)), treeHeightMinusOne, keccak256(abi.encodePacked(randomness))
-        );
-
-        // create airdrop
-        VeAirdrop airdrop = new VeAirdrop(root, block.timestamp + 1 days, block.timestamp + 2 days, votingEscrow, admin);
-
-        // warp to after airdrop starts
-        skip(1 days);
-
-        // mint tokens to airdrop contract
-        token.mint(address(airdrop), amount);
-
-        // approve airdrop contract to airdrop tokens
-        vm.prank(claimer);
-        votingEscrow.approve_airdrop(address(airdrop));
-
-        // claim airdrop
+        // Claim airdrop
         vm.prank(claimer);
         airdrop.claim(amount, proof);
 
-        // claim airdrop again
+        // Claim airdrop again
         vm.expectRevert(VeAirdrop.VeAirdrop__AlreadyClaimed.selector);
         vm.prank(claimer);
         airdrop.claim(amount, proof);
     }
 
     function test_claim_invalidMerkleProof(uint256 amount, uint8 treeHeightMinusOne, uint256 randomness) public {
-        vm.assume(amount > 0 && amount <= MAX_SUPPLY);
         address claimer = makeAddr("claimer");
+        (VeAirdrop airdrop, bytes32[] memory proof) = setupAirdrop(amount, treeHeightMinusOne, randomness, claimer);
 
-        // add locker to smart wallet checker whitelist
-        vm.prank(admin);
-        smartWalletChecker.allowlistAddress(claimer);
-
-        // generate merkle proof
-        (bytes32 root, bytes32[] memory proof) = MerkleTreeGenerator.generateMerkleTree(
-            keccak256(abi.encodePacked(claimer, amount)), treeHeightMinusOne, keccak256(abi.encodePacked(randomness))
-        );
-
-        // create airdrop
-        VeAirdrop airdrop = new VeAirdrop(root, block.timestamp + 1 days, block.timestamp + 2 days, votingEscrow, admin);
-
-        // warp to after airdrop starts
-        skip(1 days);
-
-        // mint tokens to airdrop contract
-        token.mint(address(airdrop), amount);
-
-        // approve airdrop contract to airdrop tokens
-        vm.prank(claimer);
-        votingEscrow.approve_airdrop(address(airdrop));
-
-        // claim airdrop requesting more than deserved
+        // Claim airdrop requesting more than deserved
         vm.expectRevert(VeAirdrop.VeAirdrop__InvalidMerkleProof.selector);
         vm.prank(claimer);
         airdrop.claim(amount + 1, proof);
     }
 
     function test_claim_airdropNotActive(uint256 amount, uint8 treeHeightMinusOne, uint256 randomness) public {
-        vm.assume(amount > 0 && amount <= MAX_SUPPLY);
         address claimer = makeAddr("claimer");
+        (VeAirdrop airdrop, bytes32[] memory proof) = setupAirdrop(amount, treeHeightMinusOne, randomness, claimer);
 
-        // add locker to smart wallet checker whitelist
-        vm.prank(admin);
-        smartWalletChecker.allowlistAddress(claimer);
-
-        // generate merkle proof
-        (bytes32 root, bytes32[] memory proof) = MerkleTreeGenerator.generateMerkleTree(
-            keccak256(abi.encodePacked(claimer, amount)), treeHeightMinusOne, keccak256(abi.encodePacked(randomness))
-        );
-
-        // create airdrop
-        VeAirdrop airdrop = new VeAirdrop(root, block.timestamp + 1 days, block.timestamp + 2 days, votingEscrow, admin);
-
-        // mint tokens to airdrop contract
-        token.mint(address(airdrop), amount);
-
-        // approve airdrop contract to airdrop tokens
-        vm.prank(claimer);
-        votingEscrow.approve_airdrop(address(airdrop));
-
-        // try to claim airdrop before it starts
+        // Try to claim airdrop before it starts
+        vm.warp(block.timestamp - 2 days);
         vm.expectRevert(VeAirdrop.VeAirdrop__AirdropNotActive.selector);
         vm.prank(claimer);
         airdrop.claim(amount, proof);
 
-        // warp to after airdrop ends
-        skip(3 days);
-
-        // try to claim airdrop after it ends
+        // Try to claim airdrop after it ends
+        vm.warp(block.timestamp + 4 days);
         vm.expectRevert(VeAirdrop.VeAirdrop__AirdropNotActive.selector);
         vm.prank(claimer);
         airdrop.claim(amount, proof);
@@ -185,18 +98,49 @@ contract VeAirdropTest is Test, VyperDeployer {
         vm.assume(amount > 0 && amount <= MAX_SUPPLY);
         address recipient = makeAddr("recipient");
 
-        // deploy airdrop
+        // Deploy airdrop
         VeAirdrop airdrop =
             new VeAirdrop(bytes32(0), block.timestamp + 1 days, block.timestamp + 2 days, votingEscrow, admin);
 
-        // mint tokens to airdrop contract
+        // Mint tokens to airdrop contract
         token.mint(address(airdrop), amount);
 
-        // withdraw tokens as admin
+        // Withdraw tokens as admin
         vm.prank(admin);
         airdrop.withdraw(address(token), amount, recipient);
 
-        // check result
+        // Check result
         assertEq(token.balanceOf(recipient), amount);
+    }
+
+    // Helper function to set up the airdrop for testing
+    function setupAirdrop(uint256 amount, uint8 treeHeightMinusOne, uint256 randomness, address claimer)
+        internal
+        returns (VeAirdrop airdrop, bytes32[] memory proof)
+    {
+        vm.assume(amount > 0 && amount <= MAX_SUPPLY);
+
+        // Add locker to smart wallet checker whitelist
+        vm.prank(admin);
+        smartWalletChecker.allowlistAddress(claimer);
+
+        // Generate merkle proof
+        bytes32 root;
+        (root, proof) = MerkleTreeGenerator.generateMerkleTree(
+            keccak256(abi.encodePacked(claimer, amount)), treeHeightMinusOne, keccak256(abi.encodePacked(randomness))
+        );
+
+        // Create airdrop
+        airdrop = new VeAirdrop(root, block.timestamp + 1 days, block.timestamp + 2 days, votingEscrow, admin);
+
+        // Warp to after airdrop starts
+        skip(1 days);
+
+        // Mint tokens to airdrop contract
+        token.mint(address(airdrop), amount);
+
+        // Approve airdrop contract to airdrop tokens
+        vm.prank(claimer);
+        votingEscrow.approve_airdrop(address(airdrop));
     }
 }
