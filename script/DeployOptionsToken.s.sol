@@ -18,7 +18,7 @@ contract DeployScript is CREATE3Script {
 
         address bunniHook = vm.envAddress("BUNNI_HOOK");
         address paymentToken = vm.envAddress("PAYMENT_TOKEN");
-        address underlyingToken = vm.envAddress("UNDERLYING_TOKEN");
+        address underlyingToken = getCreate3Contract("BUNNI");
         uint24 fee = vm.envUint("ORACLE_POOLKEY_FEE").toUint24();
         int24 tickSpacing = vm.envUint("ORACLE_POOLKEY_TICK_SPACING").toInt256().toInt24();
         uint16 oracleMultiplier = vm.envUint("ORACLE_MULTIPLIER").toUint16();

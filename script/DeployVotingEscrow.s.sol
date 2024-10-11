@@ -13,6 +13,7 @@ contract DeployScript is CREATE3Script, VyperDeployer {
         uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
 
         address admin = vm.envAddress("OWNER");
+        address token = getCreate3Contract("BUNNI");
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -28,7 +29,7 @@ contract DeployScript is CREATE3Script, VyperDeployer {
                 getCreate3ContractSalt("veBUNNI"),
                 bytes.concat(
                     compileContract("VotingEscrow"),
-                    abi.encode(getCreate3Contract("BUNNI"), "Vote Escrowed BUNNI", "veBUNNI", admin, smartWalletChecker)
+                    abi.encode(token, "Vote Escrowed BUNNI", "veBUNNI", admin, smartWalletChecker)
                 )
             )
         );

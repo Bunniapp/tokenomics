@@ -13,9 +13,8 @@ contract DeployScript is CREATE3Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        masterBunni = IMasterBunni(
-            create3.deploy(getCreate3ContractSalt("MasterBunni"), bytes.concat(type(MasterBunni).creationCode))
-        );
+        masterBunni =
+            IMasterBunni(create3.deploy(getCreate3ContractSalt("MasterBunni"), type(MasterBunni).creationCode));
 
         vm.stopBroadcast();
     }
