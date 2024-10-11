@@ -14,6 +14,7 @@ contract VeAirdrop is Ownable {
     using SafeTransferLib for address;
     using LibBitmap for LibBitmap.Bitmap;
 
+    error VeAirdrop__InvalidPeriod();
     error VeAirdrop__AlreadyClaimed();
     error VeAirdrop__AirdropNotActive();
     error VeAirdrop__InvalidMerkleProof();
@@ -31,6 +32,13 @@ contract VeAirdrop is Ownable {
     LibBitmap.Bitmap internal hasClaimed;
 
     constructor(bytes32 merkleRoot_, uint256 startTime_, uint256 endTime_, IVotingEscrow ve_, address owner_) {
+        // validate startTime and endTime
+        // - startTime must be before endTime
+        // - startTime must be in the future
+        if (block.timestamp >= startTime_ || startTime_ >= endTime_) {
+            revert VeAirdrop__InvalidPeriod();
+        }
+
         merkleRoot = merkleRoot_;
         startTime = startTime_;
         endTime = endTime_;
