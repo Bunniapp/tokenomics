@@ -546,10 +546,11 @@ contract MasterBunniRecurPoolTest is Test {
     }
 
     function test_recurPool_claim_IncentiveTokenMismatch() public {
-        RecurPoolKey memory key = _createRecurIncentive(1000 ether, 7 days);
-        ERC20ReferrerMock stakeToken = ERC20ReferrerMock(address(key.stakeToken));
-        ERC20Mock incentiveToken = ERC20Mock(address(key.rewardToken));
+        ERC20ReferrerMock stakeToken = new ERC20ReferrerMock();
+        ERC20Mock incentiveToken = new ERC20Mock();
         ERC20Mock incentiveToken2 = new ERC20Mock();
+        RecurPoolKey memory key =
+            RecurPoolKey({stakeToken: stakeToken, rewardToken: address(incentiveToken), duration: 7 days});
 
         // stake in the pool
         stakeToken.mint(address(this), 500 ether, 0);
