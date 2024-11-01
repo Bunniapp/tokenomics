@@ -209,7 +209,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 // period is still active
                 // add the new reward to the existing period
                 uint256 remaining = periodFinish - block.timestamp;
-                newRewardRate += params[i].incentiveAmount.mulDiv(REWARD_RATE_PRECISION, remaining);
+                newRewardRate = rewardRate + params[i].incentiveAmount.mulDiv(REWARD_RATE_PRECISION, remaining);
 
                 state.rewardRate = newRewardRate;
                 state.lastUpdateTime = uint64(block.timestamp);

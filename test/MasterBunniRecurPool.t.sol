@@ -488,8 +488,9 @@ contract MasterBunniRecurPoolTest is Test {
         masterBunni.incentivizeRecurPool(params, address(incentiveToken));
 
         (,, uint256 rewardRate,,) = masterBunni.recurPoolStates(id);
+        uint256 remainingDuration = 3 days;
         uint256 expectedRewardRate =
-            (initialIncentive / 2 + additionalIncentive).mulDiv(REWARD_RATE_PRECISION, duration);
+            (initialIncentive / 2 + additionalIncentive).mulDiv(REWARD_RATE_PRECISION, remainingDuration);
         assertApproxEqRel(
             rewardRate, expectedRewardRate, MAX_REL_ERROR, "Incorrect reward rate after additional incentive"
         );
