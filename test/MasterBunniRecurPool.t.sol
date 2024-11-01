@@ -507,6 +507,37 @@ contract MasterBunniRecurPoolTest is Test {
         assertEq(masterBunni.recurPoolStakeBalanceOf(id, address(this)), 0, "Should not join with zero balance");
     }
 
+    function test_recurPool_join_UserPoolCount() public {
+        RecurPoolKey memory key = _createRecurIncentive(1000 ether, 7 days);
+        ERC20ReferrerMock stakeToken = ERC20ReferrerMock(address(key.stakeToken));
+
+        // mint stake tokens
+        stakeToken.mint(address(this), 1000 ether, 0);
+
+        // lock stake token
+        stakeToken.lock(
+            masterBunni,
+            abi.encode(
+                IMasterBunni.LockCallbackData({recurKeys: new RecurPoolKey[](0), rushKeys: new RushPoolKey[](0)})
+            )
+        );
+
+        // join pool
+        RecurPoolKey[] memory keys = new RecurPoolKey[](1);
+        keys[0] = key;
+        masterBunni.joinRecurPool(keys);
+
+        assertEq(masterBunni.userPoolCounts(address(this), stakeToken), 1, "Should have 1 user pool count");
+
+        // mint more stake tokens
+        stakeToken.mint(address(this), 1000 ether, 0);
+
+        // join pool again
+        masterBunni.joinRecurPool(keys);
+
+        assertEq(masterBunni.userPoolCounts(address(this), stakeToken), 1, "Should still have 1 user pool count");
+    }
+
     function test_recurPool_exit_NotStaked() public {
         RecurPoolKey memory key = _createRecurIncentive(1000 ether, 7 days);
 

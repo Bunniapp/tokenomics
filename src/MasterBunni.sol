@@ -428,9 +428,11 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             state.totalSupply = totalSupply - stakedBalance + balance;
             state.balanceOf[msgSender] = balance;
 
-            // increment user pool count
-            unchecked {
-                ++userPoolCounts[msgSender][key.stakeToken];
+            // increment user pool count only if the previous staked balance is 0
+            if (stakedBalance == 0) {
+                unchecked {
+                    ++userPoolCounts[msgSender][key.stakeToken];
+                }
             }
 
             // emit event
