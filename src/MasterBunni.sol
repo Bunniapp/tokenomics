@@ -162,6 +162,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
     /// @inheritdoc IMasterBunni
     function incentivizeRecurPool(RecurIncentiveParams[] calldata params, address incentiveToken)
         external
+        nonReentrant
         returns (uint256 totalIncentiveAmount)
     {
         address msgSender = LibMulticaller.senderOrSigner();
