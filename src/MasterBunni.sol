@@ -320,7 +320,11 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
         for (uint256 i; i < keys.length; i++) {
             // should be past pool's start timestamp
-            if (!isValidRushPoolKey(keys[i]) || block.timestamp < keys[i].startTimestamp) {
+            // if lockedUntilEnd is true, then the pool is locked until the end of the program
+            if (
+                !isValidRushPoolKey(keys[i]) || block.timestamp < keys[i].startTimestamp
+                    || (keys[i].lockedUntilEnd && block.timestamp <= keys[i].startTimestamp + keys[i].programLength)
+            ) {
                 continue;
             }
 
