@@ -46,6 +46,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         nonReentrant
         returns (uint256 totalIncentiveAmount)
     {
+        if (recipient == address(0)) revert MasterBunni__InvalidRecipient();
+
         address msgSender = LibMulticaller.senderOrSigner();
 
         // record incentive in each pool
@@ -82,6 +84,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         nonReentrant
         returns (uint256 totalWithdrawnAmount)
     {
+        if (recipient == address(0)) revert MasterBunni__InvalidRecipient();
+
         address msgSender = LibMulticaller.senderOrSigner();
 
         // subtract incentive tokens from each pool
@@ -114,6 +118,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
     /// @inheritdoc IMasterBunni
     function refundIncentive(RushClaimParams[] calldata params, address recipient) external nonReentrant {
+        if (recipient == address(0)) revert MasterBunni__InvalidRecipient();
+
         address msgSender = LibMulticaller.senderOrSigner();
 
         for (uint256 i; i < params.length; i++) {
@@ -532,6 +538,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
     /// @inheritdoc IMasterBunni
     function claimRushPool(RushClaimParams[] calldata params, address recipient) external nonReentrant {
+        if (recipient == address(0)) revert MasterBunni__InvalidRecipient();
+
         address msgSender = LibMulticaller.senderOrSigner();
 
         for (uint256 i; i < params.length; i++) {
@@ -576,6 +584,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
     /// @inheritdoc IMasterBunni
     function claimRecurPool(RecurClaimParams[] calldata params, address recipient) external nonReentrant {
+        if (recipient == address(0)) revert MasterBunni__InvalidRecipient();
+
         address msgSender = LibMulticaller.senderOrSigner();
 
         for (uint256 i; i < params.length; i++) {
