@@ -27,6 +27,7 @@ contract BunniHookOracle is IOracle, Ownable {
     /// Errors
     /// -----------------------------------------------------------------------
 
+    error BunniHookOracle__InvalidParams();
     error BunniHookOracle__InvalidPoolKey();
 
     /// -----------------------------------------------------------------------
@@ -46,6 +47,11 @@ contract BunniHookOracle is IOracle, Ownable {
 
     uint256 internal constant WAD = 1e18;
     uint256 internal constant Q96 = 0x1000000000000000000000000;
+
+    uint16 internal constant MIN_MULTIPLIER = 0.1e4; // 90% discount
+    uint32 internal constant MIN_SECS = 5 minutes;
+    uint32 internal constant MAX_SECS = 365 days;
+    uint32 internal constant MAX_AGO = 365 days;
 
     /// -----------------------------------------------------------------------
     /// Immutable parameters
@@ -100,6 +106,10 @@ contract BunniHookOracle is IOracle, Ownable {
         bunniHook = bunniHook_;
         paymentToken = paymentToken_;
         underlyingToken = underlyingToken_;
+
+        if (multiplier_ < MIN_MULTIPLIER || secs_ < MIN_SECS || secs_ > MAX_SECS || ago_ > MAX_AGO) {
+            revert BunniHookOracle__InvalidParams();
+        }
 
         multiplier = multiplier_;
         secs = secs_;
@@ -193,6 +203,10 @@ contract BunniHookOracle is IOracle, Ownable {
     /// @param minPrice_ The minimum value returned by getPrice(). Maintains a floor for the
     /// price to mitigate potential attacks on the TWAP oracle.
     function setParams(uint16 multiplier_, uint32 secs_, uint32 ago_, uint128 minPrice_) external onlyOwner {
+        if (multiplier_ < MIN_MULTIPLIER || secs_ < MIN_SECS || secs_ > MAX_SECS || ago_ > MAX_AGO) {
+            revert BunniHookOracle__InvalidParams();
+        }
+
         multiplier = multiplier_;
         secs = secs_;
         ago = ago_;
