@@ -124,7 +124,9 @@ contract VeAirdropTest is Test, VyperDeployer {
         // Generate merkle proof
         bytes32 root;
         (root, proof) = MerkleTreeGenerator.generateMerkleTree(
-            keccak256(abi.encodePacked(claimer, amount)), treeHeightMinusOne, keccak256(abi.encodePacked(randomness))
+            keccak256(bytes.concat(keccak256(abi.encode(claimer, amount)))),
+            treeHeightMinusOne,
+            keccak256(abi.encodePacked(randomness))
         );
 
         // Create airdrop
