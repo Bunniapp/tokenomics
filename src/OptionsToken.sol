@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 
 import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 
+import {ERC20} from "solady/tokens/ERC20.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
@@ -31,6 +32,7 @@ contract OptionsToken is ERC20Multicaller, Ownable {
     error OptionsToken__PastDeadline();
     error OptionsToken__InvalidOracle();
     error OptionsToken__SlippageTooHigh();
+    error OptionsToken__InvalidTokenDecimals();
 
     /// -----------------------------------------------------------------------
     /// Events
@@ -68,6 +70,12 @@ contract OptionsToken is ERC20Multicaller, Ownable {
     constructor(address owner_, IOracle oracle_, address treasury_) {
         paymentToken = oracle_.paymentToken();
         underlyingToken = oracle_.underlyingToken();
+
+        // validate token decimals
+        if (ERC20(paymentToken).decimals() != 18 || ERC20(underlyingToken).decimals() != 18) {
+            revert OptionsToken__InvalidTokenDecimals();
+        }
+
         oracle = oracle_;
         treasury = treasury_;
 
