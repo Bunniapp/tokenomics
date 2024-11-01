@@ -495,6 +495,18 @@ contract MasterBunniRecurPoolTest is Test {
         );
     }
 
+    function test_recurPool_incentivize_NonExistentIncentiveToken() public {
+        // create key with non-existent incentive token
+        ERC20ReferrerMock stakeToken = new ERC20ReferrerMock();
+        RecurPoolKey memory key = RecurPoolKey({stakeToken: stakeToken, rewardToken: address(0x69), duration: 7 days});
+
+        // incentivize pool call should revert
+        IMasterBunni.RecurIncentiveParams[] memory params = new IMasterBunni.RecurIncentiveParams[](1);
+        params[0] = IMasterBunni.RecurIncentiveParams({key: key, incentiveAmount: 1000 ether});
+        vm.expectRevert(0x7939f424); // `TransferFromFailed()`.
+        masterBunni.incentivizeRecurPool(params, address(0x69));
+    }
+
     function test_recurPool_join_ZeroBalance() public {
         RecurPoolKey memory key = _createRecurIncentive(1000 ether, 7 days);
         RecurPoolId id = key.toId();
