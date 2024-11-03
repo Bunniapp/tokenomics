@@ -185,6 +185,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             uint64 lastUpdateTime = state.lastUpdateTime;
             uint64 periodFinish = state.periodFinish;
             uint256 rewardRate = state.rewardRate;
+            uint256 totalSupply = state.totalSupply;
+            uint256 zeroStakeRewardAccrued = state.zeroStakeRewardAccrued;
             uint64 lastTimeRewardApplicable = block.timestamp < periodFinish ? uint64(block.timestamp) : periodFinish;
 
             /// -----------------------------------------------------------------------
@@ -192,19 +194,29 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             /// -----------------------------------------------------------------------
 
             // accrue rewards
-            state.rewardPerTokenStored = _rewardPerToken(
-                state.rewardPerTokenStored, state.totalSupply, lastTimeRewardApplicable, lastUpdateTime, rewardRate
-            );
+            uint256 zeroStakeRewardIncrease;
+            if (totalSupply == 0) {
+                zeroStakeRewardIncrease = _zeroStakeRewardIncrease(lastTimeRewardApplicable, lastUpdateTime, rewardRate);
+                // only update the local var, need to update state later
+                zeroStakeRewardAccrued += zeroStakeRewardIncrease;
+            } else {
+                state.rewardPerTokenStored = _rewardPerToken(
+                    state.rewardPerTokenStored, totalSupply, lastTimeRewardApplicable, lastUpdateTime, rewardRate
+                );
+            }
 
             // record new reward
             uint256 newRewardRate;
             if (block.timestamp >= periodFinish) {
                 // current period is over
-                newRewardRate = params[i].incentiveAmount.mulDiv(REWARD_RATE_PRECISION, key.duration);
+                // add zero stake reward to the new reward
+                newRewardRate =
+                    (params[i].incentiveAmount + zeroStakeRewardAccrued).mulDiv(REWARD_RATE_PRECISION, key.duration);
 
                 state.rewardRate = newRewardRate;
                 state.lastUpdateTime = uint64(block.timestamp);
                 state.periodFinish = uint64(block.timestamp + key.duration);
+                delete state.zeroStakeRewardAccrued; // clear the accrued zero stake period reward since it's used up
             } else {
                 // period is still active
                 // add the new reward to the existing period
@@ -213,6 +225,10 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
                 state.rewardRate = newRewardRate;
                 state.lastUpdateTime = uint64(block.timestamp);
+                if (zeroStakeRewardIncrease != 0) {
+                    // update accrued rewards during the zero stake period
+                    state.zeroStakeRewardAccrued = zeroStakeRewardAccrued;
+                }
             }
             // prevent overflow when computing rewardPerToken
             if (newRewardRate >= ((type(uint256).max / PRECISION_DIV_REWARD_RATE_PRECISION) / key.duration)) {
@@ -408,15 +424,21 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             uint64 periodFinish = state.periodFinish;
             uint64 lastTimeRewardApplicable = block.timestamp < periodFinish ? uint64(block.timestamp) : periodFinish;
             uint256 totalSupply = state.totalSupply;
-            uint256 rewardPerTokenUpdated = _rewardPerToken(
-                state.rewardPerTokenStored, totalSupply, lastTimeRewardApplicable, lastUpdateTime, state.rewardRate
-            );
+            uint256 rewardPerTokenUpdated = state.rewardPerTokenStored; // load the stored value in the var for now
 
             /// -----------------------------------------------------------------------
             /// State updates
             /// -----------------------------------------------------------------------
 
             // accrue rewards
+            if (totalSupply == 0) {
+                state.zeroStakeRewardAccrued +=
+                    _zeroStakeRewardIncrease(lastTimeRewardApplicable, lastUpdateTime, state.rewardRate);
+            } else {
+                rewardPerTokenUpdated = _rewardPerToken(
+                    rewardPerTokenUpdated, totalSupply, lastTimeRewardApplicable, lastUpdateTime, state.rewardRate
+                );
+            }
             state.rewardPerTokenStored = rewardPerTokenUpdated;
             state.lastUpdateTime = lastTimeRewardApplicable;
             state.rewards[msgSender] = _earned(
@@ -478,6 +500,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             /// -----------------------------------------------------------------------
 
             // accrue rewards
+            // since we already checked stakedBalance != 0, we know totalSupply != 0
+            // so there's no need to update zeroStakeRewardAccrued
             state.rewardPerTokenStored = rewardPerTokenUpdated;
             state.lastUpdateTime = lastTimeRewardApplicable;
             state.rewards[msgSender] = _earned(
@@ -599,19 +623,23 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 uint64 periodFinish = state.periodFinish;
                 uint64 lastTimeRewardApplicable =
                     block.timestamp < periodFinish ? uint64(block.timestamp) : periodFinish;
-                uint256 rewardPerTokenUpdated = _rewardPerToken(
-                    state.rewardPerTokenStored,
-                    state.totalSupply,
-                    lastTimeRewardApplicable,
-                    lastUpdateTime,
-                    state.rewardRate
-                );
+                uint256 rewardRate = state.rewardRate;
+                uint256 totalSupply = state.totalSupply;
+                uint256 rewardPerTokenUpdated = state.rewardPerTokenStored; // load the stored value in the var for now
 
                 /// -----------------------------------------------------------------------
                 /// State updates
                 /// -----------------------------------------------------------------------
 
                 // accrue rewards
+                if (totalSupply == 0) {
+                    state.zeroStakeRewardAccrued +=
+                        _zeroStakeRewardIncrease(lastTimeRewardApplicable, lastUpdateTime, rewardRate);
+                } else {
+                    rewardPerTokenUpdated = _rewardPerToken(
+                        rewardPerTokenUpdated, totalSupply, lastTimeRewardApplicable, lastUpdateTime, rewardRate
+                    );
+                }
                 uint256 reward = _earned(
                     state.userRewardPerTokenPaid[msgSender],
                     state.balanceOf[msgSender],
@@ -675,15 +703,14 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         // no need to validate key since we just return 0 if it's invalid
         RecurPoolId id = key.toId();
         RecurPoolState storage state = recurPoolStates[id];
+        uint64 lastUpdateTime = state.lastUpdateTime;
         uint64 periodFinish = state.periodFinish;
         uint64 lastTimeRewardApplicable = block.timestamp < periodFinish ? uint64(block.timestamp) : periodFinish;
-        uint256 rewardPerTokenUpdated = _rewardPerToken(
-            state.rewardPerTokenStored,
-            state.totalSupply,
-            lastTimeRewardApplicable,
-            state.lastUpdateTime,
-            state.rewardRate
-        );
+        uint256 rewardPerTokenStored = state.rewardPerTokenStored;
+        uint256 totalSupply = state.totalSupply;
+        uint256 rewardPerTokenUpdated = totalSupply == 0
+            ? rewardPerTokenStored
+            : _rewardPerToken(rewardPerTokenStored, totalSupply, lastTimeRewardApplicable, lastUpdateTime, state.rewardRate);
         return _earned(
             state.userRewardPerTokenPaid[user], state.balanceOf[user], rewardPerTokenUpdated, state.rewards[user]
         );
@@ -809,16 +836,23 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             uint64 lastUpdateTime = state.lastUpdateTime;
             uint64 periodFinish = state.periodFinish;
             uint64 lastTimeRewardApplicable = block.timestamp < periodFinish ? uint64(block.timestamp) : periodFinish;
+            uint256 rewardRate = state.rewardRate;
             uint256 totalSupply = state.totalSupply;
-            uint256 rewardPerTokenUpdated = _rewardPerToken(
-                state.rewardPerTokenStored, totalSupply, lastTimeRewardApplicable, lastUpdateTime, state.rewardRate
-            );
+            uint256 rewardPerTokenUpdated = state.rewardPerTokenStored; // load the stored value in the var for now
 
             /// -----------------------------------------------------------------------
             /// State updates
             /// -----------------------------------------------------------------------
 
             // accrue rewards
+            if (totalSupply == 0) {
+                state.zeroStakeRewardAccrued +=
+                    _zeroStakeRewardIncrease(lastTimeRewardApplicable, lastUpdateTime, rewardRate);
+            } else {
+                rewardPerTokenUpdated = _rewardPerToken(
+                    rewardPerTokenUpdated, totalSupply, lastTimeRewardApplicable, lastUpdateTime, rewardRate
+                );
+            }
             // stakedBalance has been 0 so no need to update state.rewards[account]
             state.rewardPerTokenStored = rewardPerTokenUpdated;
             state.lastUpdateTime = lastTimeRewardApplicable;
@@ -880,6 +914,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             + accountRewards;
     }
 
+    /// @dev Need to ensure totalSupply != 0 before calling this function
     function _rewardPerToken(
         uint256 rewardPerTokenStored,
         uint256 totalSupply,
@@ -887,13 +922,18 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         uint256 lastUpdateTime,
         uint256 rewardRate
     ) internal pure returns (uint256) {
-        if (totalSupply == 0) {
-            return rewardPerTokenStored;
-        }
         // mulDiv won't overflow since we check that rewardRate is less than (type(uint256).max / PRECISION_DIV_REWARD_RATE_PRECISION / duration)
         return rewardPerTokenStored
             + FixedPointMathLib.mulDiv(
                 (lastTimeRewardApplicable - lastUpdateTime) * PRECISION_DIV_REWARD_RATE_PRECISION, rewardRate, totalSupply
             );
+    }
+
+    function _zeroStakeRewardIncrease(uint256 lastTimeRewardApplicable, uint256 lastUpdateTime, uint256 rewardRate)
+        internal
+        pure
+        returns (uint256)
+    {
+        return (lastTimeRewardApplicable - lastUpdateTime).mulDiv(rewardRate, REWARD_RATE_PRECISION);
     }
 }
