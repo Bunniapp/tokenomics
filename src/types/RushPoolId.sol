@@ -9,8 +9,8 @@ library RushPoolIdLibrary {
     /// @notice Returns value equal to keccak256(abi.encode(key))
     function toId(RushPoolKey memory key) internal pure returns (RushPoolId poolId) {
         assembly ("memory-safe") {
-            // 0x80 represents the total size of the RushPoolKey struct (4 slots of 32 bytes)
-            poolId := keccak256(key, 0x80)
+            // 0xA0 represents the total size of the RushPoolKey struct (5 slots of 32 bytes)
+            poolId := keccak256(key, 0xA0)
         }
     }
 }
