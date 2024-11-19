@@ -21,6 +21,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
     using SafeTransferLib for address;
 
     uint256 internal constant PRECISION = 1e36;
+    uint256 internal constant MAX_DURATION = 36500 days; // needed to avoid block.timestamp + duration overflowing uint64
     uint256 internal constant REWARD_RATE_PRECISION = 1e6;
     uint256 internal constant PRECISION_DIV_REWARD_RATE_PRECISION = PRECISION / REWARD_RATE_PRECISION;
 
@@ -46,6 +47,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         nonReentrant
         returns (uint256 totalIncentiveAmount)
     {
+        if (recipient == address(0)) revert MasterBunni__InvalidRecipient();
+
         address msgSender = LibMulticaller.senderOrSigner();
 
         // record incentive in each pool
@@ -82,6 +85,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
         nonReentrant
         returns (uint256 totalWithdrawnAmount)
     {
+        if (recipient == address(0)) revert MasterBunni__InvalidRecipient();
+
         address msgSender = LibMulticaller.senderOrSigner();
 
         // subtract incentive tokens from each pool
@@ -114,6 +119,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
     /// @inheritdoc IMasterBunni
     function refundIncentive(RushClaimParams[] calldata params, address recipient) external nonReentrant {
+        if (recipient == address(0)) revert MasterBunni__InvalidRecipient();
+
         address msgSender = LibMulticaller.senderOrSigner();
 
         for (uint256 i; i < params.length; i++) {
@@ -162,6 +169,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
     /// @inheritdoc IMasterBunni
     function incentivizeRecurPool(RecurIncentiveParams[] calldata params, address incentiveToken)
         external
+        nonReentrant
         returns (uint256 totalIncentiveAmount)
     {
         address msgSender = LibMulticaller.senderOrSigner();
@@ -341,7 +349,11 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
         for (uint256 i; i < keys.length; i++) {
             // should be past pool's start timestamp
-            if (!isValidRushPoolKey(keys[i]) || block.timestamp < keys[i].startTimestamp) {
+            // if lockedUntilEnd is true, then the pool is locked until the end of the program
+            if (
+                !isValidRushPoolKey(keys[i]) || block.timestamp < keys[i].startTimestamp
+                    || (keys[i].lockedUntilEnd && block.timestamp <= keys[i].startTimestamp + keys[i].programLength)
+            ) {
                 continue;
             }
 
@@ -455,9 +467,11 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             state.totalSupply = totalSupply - stakedBalance + balance;
             state.balanceOf[msgSender] = balance;
 
-            // increment user pool count
-            unchecked {
-                ++userPoolCounts[msgSender][key.stakeToken];
+            // increment user pool count only if the previous staked balance is 0
+            if (stakedBalance == 0) {
+                unchecked {
+                    ++userPoolCounts[msgSender][key.stakeToken];
+                }
             }
 
             // emit event
@@ -561,6 +575,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
     /// @inheritdoc IMasterBunni
     function claimRushPool(RushClaimParams[] calldata params, address recipient) external nonReentrant {
+        if (recipient == address(0)) revert MasterBunni__InvalidRecipient();
+
         address msgSender = LibMulticaller.senderOrSigner();
 
         for (uint256 i; i < params.length; i++) {
@@ -605,6 +621,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
     /// @inheritdoc IMasterBunni
     function claimRecurPool(RecurClaimParams[] calldata params, address recipient) external nonReentrant {
+        if (recipient == address(0)) revert MasterBunni__InvalidRecipient();
+
         address msgSender = LibMulticaller.senderOrSigner();
 
         for (uint256 i; i < params.length; i++) {
@@ -744,7 +762,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
     /// @inheritdoc IMasterBunni
     function isValidRecurPoolKey(RecurPoolKey memory key) public pure returns (bool) {
-        return address(key.stakeToken) != address(0) && key.rewardToken != address(0) && key.duration != 0;
+        return address(key.stakeToken) != address(0) && key.rewardToken != address(0) && key.duration != 0
+            && key.duration <= MAX_DURATION;
     }
 
     /// -----------------------------------------------------------------------

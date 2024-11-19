@@ -15,6 +15,7 @@ import {IERC20Lockable} from "../external/IERC20Lockable.sol";
 interface IMasterBunni is IERC20Unlocker {
     error MasterBunni__AmountTooLarge();
     error MasterBunni__RewardTooSmall();
+    error MasterBunni__InvalidRecipient();
 
     event DepositIncentive(
         address indexed sender,

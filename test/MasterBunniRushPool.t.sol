@@ -617,19 +617,22 @@ contract MasterBunniRushPoolTest is Test {
             stakeToken: stakeToken1,
             stakeCap: 1000 ether,
             startTimestamp: block.timestamp + 1 days,
-            programLength: 7 days
+            programLength: 7 days,
+            lockedUntilEnd: false
         });
         keys[1] = RushPoolKey({
             stakeToken: stakeToken2,
             stakeCap: 2000 ether,
             startTimestamp: block.timestamp + 2 days,
-            programLength: 14 days
+            programLength: 14 days,
+            lockedUntilEnd: false
         });
         keys[2] = RushPoolKey({
             stakeToken: stakeToken3,
             stakeCap: 3000 ether,
             startTimestamp: block.timestamp + 3 days,
-            programLength: 21 days
+            programLength: 21 days,
+            lockedUntilEnd: true
         });
 
         IMasterBunni.RushIncentiveParams[] memory params = new IMasterBunni.RushIncentiveParams[](3);
@@ -1041,7 +1044,8 @@ contract MasterBunniRushPoolTest is Test {
             stakeToken: stakeToken,
             stakeCap: 1000 ether,
             startTimestamp: block.timestamp + 1 days,
-            programLength: 7 days
+            programLength: 7 days,
+            lockedUntilEnd: false
         });
 
         IMasterBunni.RushIncentiveParams[] memory params = new IMasterBunni.RushIncentiveParams[](1);
@@ -1061,7 +1065,8 @@ contract MasterBunniRushPoolTest is Test {
             stakeToken: stakeToken,
             stakeCap: 1000 ether,
             startTimestamp: block.timestamp - 1 days,
-            programLength: 7 days
+            programLength: 7 days,
+            lockedUntilEnd: false
         });
 
         IMasterBunni.RushIncentiveParams[] memory params = new IMasterBunni.RushIncentiveParams[](1);
@@ -1069,6 +1074,23 @@ contract MasterBunniRushPoolTest is Test {
 
         uint256 depositedAmount = masterBunni.depositIncentive(params, address(incentiveToken), RECIPIENT);
         assertEq(depositedAmount, 0, "Should not deposit incentive past start timestamp");
+    }
+
+    function test_rushPool_depositIncentive_NonExistentIncentiveToken() public {
+        // create key with non-existent incentive token
+        ERC20ReferrerMock stakeToken = new ERC20ReferrerMock();
+        RushPoolKey memory key = RushPoolKey({
+            stakeToken: stakeToken,
+            stakeCap: 1000 ether,
+            startTimestamp: block.timestamp + 1 days,
+            programLength: 7 days
+        });
+
+        // deposit incentive call should revert
+        IMasterBunni.RushIncentiveParams[] memory params = new IMasterBunni.RushIncentiveParams[](1);
+        params[0] = IMasterBunni.RushIncentiveParams({key: key, incentiveAmount: 1000 ether});
+        vm.expectRevert(0x7939f424); // `TransferFromFailed()`.
+        masterBunni.depositIncentive(params, address(0x69), RECIPIENT);
     }
 
     function test_rushPool_withdrawIncentive_MoreThanDeposited() public {
@@ -1145,6 +1167,27 @@ contract MasterBunniRushPoolTest is Test {
         RushPoolKey[] memory keys = new RushPoolKey[](1);
         keys[0] = key;
 
+        // No revert expected, but no state change should occur
+        vm.record();
+        masterBunni.exitRushPool(keys);
+        (, bytes32[] memory writeSlots) = vm.accesses(address(masterBunni));
+        assertEq(writeSlots.length, 0, "Should not update state");
+    }
+
+    function test_rushPool_exit_LockedUntilEnd() public {
+        (RushPoolKey memory key, RushPoolId id, ERC20ReferrerMock stakeToken,) =
+            _createIncentive(1000, 1000 ether, block.timestamp + 1 days, 7 days, true);
+
+        stakeToken.mint(address(this), 500 ether, 0);
+
+        RushPoolKey[] memory keys = new RushPoolKey[](1);
+        keys[0] = key;
+
+        stakeToken.lock(
+            masterBunni, abi.encode(IMasterBunni.LockCallbackData({recurKeys: new RecurPoolKey[](0), rushKeys: keys}))
+        );
+
+        // try to exit
         // No revert expected, but no state change should occur
         vm.record();
         masterBunni.exitRushPool(keys);
@@ -1234,6 +1277,19 @@ contract MasterBunniRushPoolTest is Test {
         internal
         returns (RushPoolKey memory key, RushPoolId id, ERC20ReferrerMock stakeToken, ERC20Mock incentiveToken)
     {
+        return _createIncentive(incentiveAmount, stakeCap, startTimestamp, programLength, false);
+    }
+
+    function _createIncentive(
+        uint256 incentiveAmount,
+        uint256 stakeCap,
+        uint256 startTimestamp,
+        uint256 programLength,
+        bool lockedUntilEnd
+    )
+        internal
+        returns (RushPoolKey memory key, RushPoolId id, ERC20ReferrerMock stakeToken, ERC20Mock incentiveToken)
+    {
         stakeToken = new ERC20ReferrerMock();
 
         // mint incentive token
@@ -1248,7 +1304,8 @@ contract MasterBunniRushPoolTest is Test {
             stakeToken: stakeToken,
             stakeCap: stakeCap,
             startTimestamp: startTimestamp,
-            programLength: programLength
+            programLength: programLength,
+            lockedUntilEnd: lockedUntilEnd
         });
         id = key.toId();
         IMasterBunni.RushIncentiveParams[] memory params = new IMasterBunni.RushIncentiveParams[](1);
@@ -1283,7 +1340,8 @@ contract MasterBunniRushPoolTest is Test {
             stakeToken: new ERC20ReferrerMock(),
             stakeCap: 1000 ether,
             startTimestamp: block.timestamp + 1 days,
-            programLength: 7 days
+            programLength: 7 days,
+            lockedUntilEnd: false
         });
         incentiveAmounts[0] = 100 ether;
 
@@ -1291,7 +1349,8 @@ contract MasterBunniRushPoolTest is Test {
             stakeToken: new ERC20ReferrerMock(),
             stakeCap: 2000 ether,
             startTimestamp: block.timestamp + 1 days,
-            programLength: 14 days
+            programLength: 14 days,
+            lockedUntilEnd: false
         });
         incentiveAmounts[1] = 200 ether;
 
@@ -1299,7 +1358,8 @@ contract MasterBunniRushPoolTest is Test {
             stakeToken: new ERC20ReferrerMock(),
             stakeCap: 3000 ether,
             startTimestamp: block.timestamp + 1 days,
-            programLength: 21 days
+            programLength: 21 days,
+            lockedUntilEnd: false
         });
         incentiveAmounts[2] = 300 ether;
 

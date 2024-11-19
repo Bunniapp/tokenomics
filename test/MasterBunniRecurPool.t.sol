@@ -15,7 +15,7 @@ contract MasterBunniRecurPoolTest is Test {
     uint256 internal constant PRECISION = 1e36;
     uint256 internal constant REWARD_RATE_PRECISION = 1e6;
     address internal constant RECIPIENT = address(0xB0B);
-    uint256 internal constant MAX_REL_ERROR = 1e11;
+    uint256 internal constant MAX_REL_ERROR = 1e12;
 
     IMasterBunni masterBunni;
 
@@ -576,6 +576,18 @@ contract MasterBunniRecurPoolTest is Test {
         );
     }
 
+    function test_recurPool_incentivize_NonExistentIncentiveToken() public {
+        // create key with non-existent incentive token
+        ERC20ReferrerMock stakeToken = new ERC20ReferrerMock();
+        RecurPoolKey memory key = RecurPoolKey({stakeToken: stakeToken, rewardToken: address(0x69), duration: 7 days});
+
+        // incentivize pool call should revert
+        IMasterBunni.RecurIncentiveParams[] memory params = new IMasterBunni.RecurIncentiveParams[](1);
+        params[0] = IMasterBunni.RecurIncentiveParams({key: key, incentiveAmount: 1000 ether});
+        vm.expectRevert(0x7939f424); // `TransferFromFailed()`.
+        masterBunni.incentivizeRecurPool(params, address(0x69));
+    }
+
     function test_recurPool_join_ZeroBalance() public {
         RecurPoolKey memory key = _createRecurIncentive(1000 ether, 7 days);
         RecurPoolId id = key.toId();
@@ -586,6 +598,37 @@ contract MasterBunniRecurPoolTest is Test {
         masterBunni.joinRecurPool(keys);
 
         assertEq(masterBunni.recurPoolStakeBalanceOf(id, address(this)), 0, "Should not join with zero balance");
+    }
+
+    function test_recurPool_join_UserPoolCount() public {
+        RecurPoolKey memory key = _createRecurIncentive(1000 ether, 7 days);
+        ERC20ReferrerMock stakeToken = ERC20ReferrerMock(address(key.stakeToken));
+
+        // mint stake tokens
+        stakeToken.mint(address(this), 1000 ether, 0);
+
+        // lock stake token
+        stakeToken.lock(
+            masterBunni,
+            abi.encode(
+                IMasterBunni.LockCallbackData({recurKeys: new RecurPoolKey[](0), rushKeys: new RushPoolKey[](0)})
+            )
+        );
+
+        // join pool
+        RecurPoolKey[] memory keys = new RecurPoolKey[](1);
+        keys[0] = key;
+        masterBunni.joinRecurPool(keys);
+
+        assertEq(masterBunni.userPoolCounts(address(this), stakeToken), 1, "Should have 1 user pool count");
+
+        // mint more stake tokens
+        stakeToken.mint(address(this), 1000 ether, 0);
+
+        // join pool again
+        masterBunni.joinRecurPool(keys);
+
+        assertEq(masterBunni.userPoolCounts(address(this), stakeToken), 1, "Should still have 1 user pool count");
     }
 
     function test_recurPool_exit_NotStaked() public {
