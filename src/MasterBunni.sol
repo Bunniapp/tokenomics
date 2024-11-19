@@ -53,8 +53,11 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
         // record incentive in each pool
         for (uint256 i; i < params.length; i++) {
-            if (!isValidRushPoolKey(params[i].key) || block.timestamp >= params[i].key.startTimestamp) {
-                // key is invalid or program is already active, skip
+            if (
+                !isValidRushPoolKey(params[i].key) || block.timestamp >= params[i].key.startTimestamp
+                    || params[i].incentiveAmount == 0
+            ) {
+                // key is invalid or program is already active or zero incentive amount, skip
                 continue;
             }
 
