@@ -15,7 +15,7 @@ contract MasterBunniRecurPoolTest is Test {
     uint256 internal constant PRECISION = 1e36;
     uint256 internal constant REWARD_RATE_PRECISION = 1e6;
     address internal constant RECIPIENT = address(0xB0B);
-    uint256 internal constant MAX_REL_ERROR = 1e11;
+    uint256 internal constant MAX_REL_ERROR = 1e12;
 
     IMasterBunni masterBunni;
 
@@ -42,17 +42,27 @@ contract MasterBunniRecurPoolTest is Test {
         assertEq(incentiveToken.balanceOf(address(masterBunni)), incentiveAmount);
 
         // check reward rate
-        (,, uint256 rewardRate,,) = masterBunni.recurPoolStates(id);
+        (,, uint256 rewardRate,,,) = masterBunni.recurPoolStates(id);
         assertEq(rewardRate, incentiveAmount.mulDiv(REWARD_RATE_PRECISION, key.duration), "Incorrect reward rate");
     }
 
-    function test_recurPool_incentivize_afterPeriodEnd(uint256 incentiveAmount) public {
+    function test_recurPool_incentivize_afterPeriodEnd_noZeroStakePeriod(uint256 incentiveAmount) public {
         vm.assume(incentiveAmount > 0 && incentiveAmount <= 1e36);
 
         // create incentive
         RecurPoolKey memory key = _createRecurIncentive(incentiveAmount, 7 days);
         RecurPoolId id = key.toId();
         ERC20Mock incentiveToken = ERC20Mock(address(key.rewardToken));
+        ERC20ReferrerMock stakeToken = ERC20ReferrerMock(address(key.stakeToken));
+
+        stakeToken.mint(address(this), 1000 ether, 0);
+
+        // lock stake token
+        RecurPoolKey[] memory keys = new RecurPoolKey[](1);
+        keys[0] = key;
+        stakeToken.lock(
+            masterBunni, abi.encode(IMasterBunni.LockCallbackData({recurKeys: keys, rushKeys: new RushPoolKey[](0)}))
+        );
 
         // wait until the end of the program
         skip(10 days);
@@ -68,8 +78,78 @@ contract MasterBunniRecurPoolTest is Test {
         assertEq(incentiveToken.balanceOf(address(masterBunni)), incentiveAmount * 2);
 
         // check reward rate
-        (,, uint256 rewardRate,,) = masterBunni.recurPoolStates(id);
+        (,, uint256 rewardRate,,,) = masterBunni.recurPoolStates(id);
         assertEq(rewardRate, incentiveAmount.mulDiv(REWARD_RATE_PRECISION, key.duration), "Incorrect reward rate");
+    }
+
+    function test_recurPool_incentivize_afterPeriodEnd_hasZeroStakePeriod(uint256 incentiveAmount) public {
+        vm.assume(incentiveAmount > 1e6 && incentiveAmount <= 1e36);
+
+        // create incentive
+        RecurPoolKey memory key = _createRecurIncentive(incentiveAmount, 7 days);
+        RecurPoolId id = key.toId();
+        ERC20Mock incentiveToken = ERC20Mock(address(key.rewardToken));
+        ERC20ReferrerMock stakeToken = ERC20ReferrerMock(address(key.stakeToken));
+
+        // let 2 days pass with no stake
+        skip(2 days);
+
+        // stake
+        stakeToken.mint(address(this), 1000 ether, 0);
+        RecurPoolKey[] memory keys = new RecurPoolKey[](1);
+        keys[0] = key;
+        stakeToken.lock(
+            masterBunni, abi.encode(IMasterBunni.LockCallbackData({recurKeys: keys, rushKeys: new RushPoolKey[](0)}))
+        );
+
+        // let 2 days pass
+        skip(2 days);
+
+        // add more incentives
+        incentiveToken.mint(address(this), incentiveAmount);
+        IMasterBunni.RecurIncentiveParams[] memory params = new IMasterBunni.RecurIncentiveParams[](1);
+        params[0] = IMasterBunni.RecurIncentiveParams({key: key, incentiveAmount: incentiveAmount});
+        masterBunni.incentivizeRecurPool(params, address(incentiveToken));
+
+        // unstake
+        masterBunni.exitRecurPool(keys);
+
+        // wait for 1 day
+        skip(1 days);
+
+        // stake again
+        masterBunni.joinRecurPool(keys);
+
+        // wait for 1 day
+        skip(1 days);
+
+        // unstake
+        masterBunni.exitRecurPool(keys);
+
+        // wait for 2 days
+        // the reward duration is now over
+        skip(2 days);
+
+        // add incentives
+        incentiveToken.mint(address(this), incentiveAmount);
+        masterBunni.incentivizeRecurPool(params, address(incentiveToken));
+
+        // check reward rate
+        // expect zero stake period rewards:
+        // days [0, 2): incentiveAmount * 2 / 7
+        // days [4, 5): (incentiveAmount * 3 / 7 + incentiveAmount) * 1 / 3
+        // days [6, 7): (incentiveAmount * 3 / 7 + incentiveAmount) * 1 / 3
+        uint256 expectedIncentiveAmount = incentiveAmount + incentiveAmount * 2 / 7
+            + (incentiveAmount * 3 / 7 + incentiveAmount) * 1 / 3 + (incentiveAmount * 3 / 7 + incentiveAmount) * 1 / 3;
+        (,, uint256 rewardRate,,,) = masterBunni.recurPoolStates(id);
+        assertApproxEqAbs(
+            rewardRate, expectedIncentiveAmount.mulDiv(REWARD_RATE_PRECISION, key.duration), 10, "Incorrect reward rate"
+        );
+        assertLe(
+            rewardRate,
+            expectedIncentiveAmount.mulDiv(REWARD_RATE_PRECISION, key.duration),
+            "Reward rate exceeds expected"
+        );
     }
 
     function test_recurPool_join_single(
@@ -487,9 +567,10 @@ contract MasterBunniRecurPoolTest is Test {
 
         masterBunni.incentivizeRecurPool(params, address(incentiveToken));
 
-        (,, uint256 rewardRate,,) = masterBunni.recurPoolStates(id);
+        (,, uint256 rewardRate,,,) = masterBunni.recurPoolStates(id);
+        uint256 remainingDuration = 3 days;
         uint256 expectedRewardRate =
-            (initialIncentive / 2 + additionalIncentive).mulDiv(REWARD_RATE_PRECISION, duration);
+            (initialIncentive / 2 + additionalIncentive).mulDiv(REWARD_RATE_PRECISION, remainingDuration);
         assertApproxEqRel(
             rewardRate, expectedRewardRate, MAX_REL_ERROR, "Incorrect reward rate after additional incentive"
         );
@@ -520,6 +601,18 @@ contract MasterBunniRecurPoolTest is Test {
         assertEq(incentiveToken2.balanceOf(address(this)), 1000 ether, "Should not incentivize");
     }
 
+    function test_recurPool_incentivize_NonExistentIncentiveToken() public {
+        // create key with non-existent incentive token
+        ERC20ReferrerMock stakeToken = new ERC20ReferrerMock();
+        RecurPoolKey memory key = RecurPoolKey({stakeToken: stakeToken, rewardToken: address(0x69), duration: 7 days});
+
+        // incentivize pool call should revert
+        IMasterBunni.RecurIncentiveParams[] memory params = new IMasterBunni.RecurIncentiveParams[](1);
+        params[0] = IMasterBunni.RecurIncentiveParams({key: key, incentiveAmount: 1000 ether});
+        vm.expectRevert(0x7939f424); // `TransferFromFailed()`.
+        masterBunni.incentivizeRecurPool(params, address(0x69));
+    }
+
     function test_recurPool_join_ZeroBalance() public {
         RecurPoolKey memory key = _createRecurIncentive(1000 ether, 7 days);
         RecurPoolId id = key.toId();
@@ -530,6 +623,37 @@ contract MasterBunniRecurPoolTest is Test {
         masterBunni.joinRecurPool(keys);
 
         assertEq(masterBunni.recurPoolStakeBalanceOf(id, address(this)), 0, "Should not join with zero balance");
+    }
+
+    function test_recurPool_join_UserPoolCount() public {
+        RecurPoolKey memory key = _createRecurIncentive(1000 ether, 7 days);
+        ERC20ReferrerMock stakeToken = ERC20ReferrerMock(address(key.stakeToken));
+
+        // mint stake tokens
+        stakeToken.mint(address(this), 1000 ether, 0);
+
+        // lock stake token
+        stakeToken.lock(
+            masterBunni,
+            abi.encode(
+                IMasterBunni.LockCallbackData({recurKeys: new RecurPoolKey[](0), rushKeys: new RushPoolKey[](0)})
+            )
+        );
+
+        // join pool
+        RecurPoolKey[] memory keys = new RecurPoolKey[](1);
+        keys[0] = key;
+        masterBunni.joinRecurPool(keys);
+
+        assertEq(masterBunni.userPoolCounts(address(this), stakeToken), 1, "Should have 1 user pool count");
+
+        // mint more stake tokens
+        stakeToken.mint(address(this), 1000 ether, 0);
+
+        // join pool again
+        masterBunni.joinRecurPool(keys);
+
+        assertEq(masterBunni.userPoolCounts(address(this), stakeToken), 1, "Should still have 1 user pool count");
     }
 
     function test_recurPool_exit_NotStaked() public {

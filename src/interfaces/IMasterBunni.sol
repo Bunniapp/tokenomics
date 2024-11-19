@@ -14,6 +14,8 @@ import {IERC20Lockable} from "../external/IERC20Lockable.sol";
 /// @author zefram.eth
 interface IMasterBunni is IERC20Unlocker {
     error MasterBunni__AmountTooLarge();
+    error MasterBunni__RewardTooSmall();
+    error MasterBunni__InvalidRecipient();
 
     event DepositIncentive(
         address indexed sender,
@@ -70,6 +72,7 @@ interface IMasterBunni is IERC20Unlocker {
     /// @member rewardRate The per-second rate at which rewardPerToken increases
     /// @member rewardPerTokenStored The last stored rewardPerToken value
     /// @member totalSupply The total tokens staked in the pool
+    /// @member zeroStakeRewardAccrued The reward distributed during periods where the total stake was zero in the current duration
     /// @member balanceOf The amount of tokens staked by an account
     /// @member userRewardPerTokenPaid The rewardPerToken value when an account last staked/withdrew/withdrew rewards
     /// @member rewards The earned() value when an account last staked/withdrew/withdrew rewards
@@ -79,6 +82,7 @@ interface IMasterBunni is IERC20Unlocker {
         uint256 rewardRate;
         uint256 rewardPerTokenStored;
         uint256 totalSupply;
+        uint256 zeroStakeRewardAccrued;
         mapping(address => uint256) balanceOf;
         mapping(address => uint256) userRewardPerTokenPaid;
         mapping(address => uint256) rewards;
@@ -184,6 +188,7 @@ interface IMasterBunni is IERC20Unlocker {
     /// @return rewardRate The per-second rate at which rewardPerToken increases
     /// @return rewardPerTokenStored The last stored rewardPerToken value
     /// @return totalSupply The total tokens staked in the pool
+    /// @return zeroStakeRewardAccrued The reward distributed during periods where the total stake was zero in the current duration
     function recurPoolStates(RecurPoolId id)
         external
         view
@@ -192,7 +197,8 @@ interface IMasterBunni is IERC20Unlocker {
             uint64 periodFinish,
             uint256 rewardRate,
             uint256 rewardPerTokenStored,
-            uint256 totalSupply
+            uint256 totalSupply,
+            uint256 zeroStakeRewardAccrued
         );
 
     /// @notice Returns the amount of tokens staked by an address in a RecurPool.

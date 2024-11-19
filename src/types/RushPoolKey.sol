@@ -11,4 +11,5 @@ struct RushPoolKey {
     uint256 stakeCap;
     uint256 startTimestamp;
     uint256 programLength;
+    bool lockedUntilEnd;
 }

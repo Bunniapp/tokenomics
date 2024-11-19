@@ -69,7 +69,9 @@ contract VeAirdrop is Ownable {
         }
 
         // validate merkle proof
-        bytes32 leaf = keccak256(abi.encodePacked(msgSender, amount));
+        // leaf is double hashed to prevent second preimage attacks
+        // see https://github.com/OpenZeppelin/merkle-tree#standard-merkle-trees
+        bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(msgSender, amount))));
         if (!MerkleProofLib.verifyCalldata(proof, merkleRoot, leaf)) {
             revert VeAirdrop__InvalidMerkleProof();
         }
