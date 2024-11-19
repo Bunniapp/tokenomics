@@ -576,6 +576,31 @@ contract MasterBunniRecurPoolTest is Test {
         );
     }
 
+    function test_recurPool_incentivize_IncentiveTokenMismatch() public {
+        // create incentive key
+        ERC20ReferrerMock stakeToken = new ERC20ReferrerMock();
+        ERC20Mock incentiveToken = new ERC20Mock();
+        ERC20Mock incentiveToken2 = new ERC20Mock();
+        RecurPoolKey memory key =
+            RecurPoolKey({stakeToken: stakeToken, rewardToken: address(incentiveToken), duration: 7 days});
+
+        // mint and approve incentive tokens
+        incentiveToken.mint(address(this), 1000 ether);
+        incentiveToken.approve(address(masterBunni), 1000 ether);
+        incentiveToken2.mint(address(this), 1000 ether);
+        incentiveToken2.approve(address(masterBunni), 1000 ether);
+
+        // try incentivizing key with different incentive token
+        vm.record();
+        IMasterBunni.RecurIncentiveParams[] memory params = new IMasterBunni.RecurIncentiveParams[](1);
+        params[0] = IMasterBunni.RecurIncentiveParams({key: key, incentiveAmount: 1000 ether});
+        masterBunni.incentivizeRecurPool(params, address(incentiveToken2));
+        (, bytes32[] memory writeSlots) = vm.accesses(address(masterBunni));
+        assertEq(writeSlots.length, 0, "Should not update state");
+        assertEq(incentiveToken.balanceOf(address(this)), 1000 ether, "Should not incentivize");
+        assertEq(incentiveToken2.balanceOf(address(this)), 1000 ether, "Should not incentivize");
+    }
+
     function test_recurPool_incentivize_NonExistentIncentiveToken() public {
         // create key with non-existent incentive token
         ERC20ReferrerMock stakeToken = new ERC20ReferrerMock();
