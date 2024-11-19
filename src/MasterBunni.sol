@@ -639,6 +639,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
                 // key should be valid
                 if (!isValidRecurPoolKey(key)) continue;
 
+                // incentiveToken should equal key.rewardToken
+                if (incentiveToken != key.rewardToken) continue;
+
                 /// -----------------------------------------------------------------------
                 /// Storage loads
                 /// -----------------------------------------------------------------------

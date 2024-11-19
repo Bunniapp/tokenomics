@@ -694,6 +694,44 @@ contract MasterBunniRecurPoolTest is Test {
         assertEq(incentiveToken.balanceOf(RECIPIENT), 0, "Should not claim any reward immediately after staking");
     }
 
+    function test_recurPool_claim_IncentiveTokenMismatch() public {
+        ERC20ReferrerMock stakeToken = new ERC20ReferrerMock();
+        ERC20Mock incentiveToken = new ERC20Mock();
+        ERC20Mock incentiveToken2 = new ERC20Mock();
+        RecurPoolKey memory key =
+            RecurPoolKey({stakeToken: stakeToken, rewardToken: address(incentiveToken), duration: 7 days});
+
+        // stake in the pool
+        stakeToken.mint(address(this), 500 ether, 0);
+        RecurPoolKey[] memory keys = new RecurPoolKey[](1);
+        keys[0] = key;
+        stakeToken.lock(
+            masterBunni, abi.encode(IMasterBunni.LockCallbackData({recurKeys: keys, rushKeys: new RushPoolKey[](0)}))
+        );
+
+        // distribute both incentive tokens to the pool
+        incentiveToken.mint(address(this), 1000 ether);
+        incentiveToken.approve(address(masterBunni), 1000 ether);
+        incentiveToken2.mint(address(this), 1000 ether);
+        incentiveToken2.approve(address(masterBunni), 1000 ether);
+        IMasterBunni.RecurIncentiveParams[] memory incentiveParams = new IMasterBunni.RecurIncentiveParams[](1);
+        incentiveParams[0] = IMasterBunni.RecurIncentiveParams({key: key, incentiveAmount: 1000 ether});
+        masterBunni.incentivizeRecurPool(incentiveParams, address(incentiveToken));
+        masterBunni.incentivizeRecurPool(incentiveParams, address(incentiveToken2));
+
+        // wait some time
+        skip(7 days);
+
+        // try claiming rewards in incentiveToken2
+        IMasterBunni.RecurClaimParams[] memory params = new IMasterBunni.RecurClaimParams[](1);
+        params[0].incentiveToken = address(incentiveToken2); // incentiveToken != key.rewardToken
+        params[0].keys = keys;
+        masterBunni.claimRecurPool(params, RECIPIENT);
+
+        // recipient should not receive rewards
+        assertEq(incentiveToken2.balanceOf(RECIPIENT), 0);
+    }
+
     function test_unlock_StillStaked() public {
         RecurPoolKey memory key = _createRecurIncentive(1000 ether, 7 days);
         ERC20ReferrerMock stakeToken = ERC20ReferrerMock(address(key.stakeToken));
