@@ -21,6 +21,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
     using SafeTransferLib for address;
 
     uint256 internal constant PRECISION = 1e36;
+    uint256 internal constant MAX_DURATION = 36500 days; // needed to avoid block.timestamp + duration overflowing uint64
     uint256 internal constant REWARD_RATE_PRECISION = 1e6;
     uint256 internal constant PRECISION_DIV_REWARD_RATE_PRECISION = PRECISION / REWARD_RATE_PRECISION;
 
@@ -723,7 +724,8 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
     /// @inheritdoc IMasterBunni
     function isValidRecurPoolKey(RecurPoolKey memory key) public pure returns (bool) {
-        return address(key.stakeToken) != address(0) && key.rewardToken != address(0) && key.duration != 0;
+        return address(key.stakeToken) != address(0) && key.rewardToken != address(0) && key.duration != 0
+            && key.duration <= MAX_DURATION;
     }
 
     /// -----------------------------------------------------------------------
