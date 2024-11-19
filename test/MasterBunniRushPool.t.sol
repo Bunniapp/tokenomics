@@ -1076,6 +1076,23 @@ contract MasterBunniRushPoolTest is Test {
         assertEq(depositedAmount, 0, "Should not deposit incentive past start timestamp");
     }
 
+    function test_rushPool_depositIncentive_NonExistentIncentiveToken() public {
+        // create key with non-existent incentive token
+        ERC20ReferrerMock stakeToken = new ERC20ReferrerMock();
+        RushPoolKey memory key = RushPoolKey({
+            stakeToken: stakeToken,
+            stakeCap: 1000 ether,
+            startTimestamp: block.timestamp + 1 days,
+            programLength: 7 days
+        });
+
+        // deposit incentive call should revert
+        IMasterBunni.RushIncentiveParams[] memory params = new IMasterBunni.RushIncentiveParams[](1);
+        params[0] = IMasterBunni.RushIncentiveParams({key: key, incentiveAmount: 1000 ether});
+        vm.expectRevert(0x7939f424); // `TransferFromFailed()`.
+        masterBunni.depositIncentive(params, address(0x69), RECIPIENT);
+    }
+
     function test_rushPool_withdrawIncentive_MoreThanDeposited() public {
         uint256 incentiveAmount = 1 ether;
         (RushPoolKey memory key,,, ERC20Mock incentiveToken) =
