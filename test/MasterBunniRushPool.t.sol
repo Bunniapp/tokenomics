@@ -1083,7 +1083,8 @@ contract MasterBunniRushPoolTest is Test {
             stakeToken: stakeToken,
             stakeCap: 1000 ether,
             startTimestamp: block.timestamp + 1 days,
-            programLength: 7 days
+            programLength: 7 days,
+            lockedUntilEnd: false
         });
 
         // deposit incentive call should revert
@@ -1175,7 +1176,7 @@ contract MasterBunniRushPoolTest is Test {
     }
 
     function test_rushPool_exit_LockedUntilEnd() public {
-        (RushPoolKey memory key, RushPoolId id, ERC20ReferrerMock stakeToken,) =
+        (RushPoolKey memory key,, ERC20ReferrerMock stakeToken,) =
             _createIncentive(1000, 1000 ether, block.timestamp + 1 days, 7 days, true);
 
         stakeToken.mint(address(this), 500 ether, 0);
