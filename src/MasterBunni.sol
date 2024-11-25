@@ -613,15 +613,17 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
                 // accumulate claimable reward
                 totalClaimableAmount += claimableReward;
+
+                if (claimableReward != 0) {
+                    // emit event
+                    emit ClaimRushPoolReward(msgSender, incentiveToken, recipient, claimableReward, params[i].keys[j]);
+                }
             }
 
             // transfer incentive tokens to user
             if (totalClaimableAmount != 0) {
                 incentiveToken.safeTransfer(recipient, totalClaimableAmount);
             }
-
-            // emit event
-            emit ClaimReward(msgSender, incentiveToken, recipient, totalClaimableAmount);
         }
     }
 
@@ -688,6 +690,9 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
 
                     // accumulate claimable amount
                     totalClaimableAmount += reward;
+
+                    // emit event
+                    emit ClaimRecurPoolReward(msgSender, incentiveToken, recipient, reward, params[i].keys[j]);
                 }
             }
 
@@ -695,9 +700,6 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             if (totalClaimableAmount != 0) {
                 incentiveToken.safeTransfer(recipient, totalClaimableAmount);
             }
-
-            // emit event
-            emit ClaimReward(msgSender, incentiveToken, recipient, totalClaimableAmount);
         }
     }
 
