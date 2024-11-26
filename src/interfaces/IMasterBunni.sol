@@ -54,8 +54,20 @@ interface IMasterBunni is IERC20Unlocker {
 
     event Unlock(address indexed sender, IERC20Lockable indexed stakeToken);
 
-    event ClaimReward(
-        address indexed sender, address indexed incentiveToken, address indexed recipient, uint256 totalClaimableAmount
+    event ClaimRushPoolReward(
+        address indexed sender,
+        address indexed incentiveToken,
+        address indexed recipient,
+        uint256 claimableReward,
+        RushPoolKey key
+    );
+
+    event ClaimRecurPoolReward(
+        address indexed sender,
+        address indexed incentiveToken,
+        address indexed recipient,
+        uint256 reward,
+        RecurPoolKey key
     );
 
     /// @member stakeAmount The amount of stake tokens staked.
