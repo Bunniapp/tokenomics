@@ -165,7 +165,7 @@ contract MasterBunni is IMasterBunni, ReentrancyGuard {
             }
 
             // emit event
-            emit RefundIncentive(msgSender, incentiveToken, recipient, totalRefundAmount);
+            emit RefundIncentive(msgSender, incentiveToken, recipient, params[i].keys, totalRefundAmount);
         }
     }
 
