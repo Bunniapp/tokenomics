@@ -1161,6 +1161,28 @@ contract MasterBunniRushPoolTest is Test {
         assertEq(poolStakeAmount, 0, "Should not join after end");
     }
 
+    function test_rushPool_join_userStakeXTimeZeroInit() public {
+        (RushPoolKey memory key, RushPoolId id, ERC20ReferrerMock stakeToken,) =
+            _createIncentive(1000, 1000 ether, block.timestamp + 1 days, 7 days);
+
+        stakeToken.mint(address(this), 500 ether, 0);
+
+        RushPoolKey[] memory keys = new RushPoolKey[](1);
+        keys[0] = key;
+
+        stakeToken.lock(
+            masterBunni,
+            abi.encode(
+                IMasterBunni.LockCallbackData({recurKeys: new RecurPoolKey[](0), rushKeys: new RushPoolKey[](0)})
+            )
+        );
+
+        masterBunni.joinRushPool(keys);
+
+        (, uint256 stakeXTimeStored,) = masterBunni.rushPoolUserStates(id, address(this));
+        assertEq(stakeXTimeStored, 0, "Should not have stake x time");
+    }
+
     function test_rushPool_exit_NotStaked() public {
         (RushPoolKey memory key,,,) = _createIncentive(1000, 1000 ether, block.timestamp + 1, 7 days);
         skip(1);
