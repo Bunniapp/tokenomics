@@ -34,7 +34,11 @@ interface IMasterBunni is IERC20Unlocker {
     );
 
     event RefundIncentive(
-        address indexed sender, address indexed incentiveToken, address indexed recipient, uint256 totalRefundAmount
+        address indexed sender,
+        address indexed incentiveToken,
+        address indexed recipient,
+        RushPoolKey[] keys,
+        uint256 totalRefundAmount
     );
 
     event IncentivizeRecurPool(
