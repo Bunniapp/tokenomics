@@ -1090,7 +1090,7 @@ contract MasterBunniRushPoolTest is Test {
         // deposit incentive call should revert
         IMasterBunni.RushIncentiveParams[] memory params = new IMasterBunni.RushIncentiveParams[](1);
         params[0] = IMasterBunni.RushIncentiveParams({key: key, incentiveAmount: 1000 ether});
-        vm.expectRevert(0x7939f424); // `TransferFromFailed()`.
+        vm.expectRevert(bytes4(0x7939f424)); // `TransferFromFailed()`.
         masterBunni.depositIncentive(params, address(0x69), RECIPIENT);
     }
 

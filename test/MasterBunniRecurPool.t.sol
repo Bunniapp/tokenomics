@@ -609,7 +609,7 @@ contract MasterBunniRecurPoolTest is Test {
         // incentivize pool call should revert
         IMasterBunni.RecurIncentiveParams[] memory params = new IMasterBunni.RecurIncentiveParams[](1);
         params[0] = IMasterBunni.RecurIncentiveParams({key: key, incentiveAmount: 1000 ether});
-        vm.expectRevert(0x7939f424); // `TransferFromFailed()`.
+        vm.expectRevert(bytes4(0x7939f424)); // `TransferFromFailed()`.
         masterBunni.incentivizeRecurPool(params, address(0x69));
     }
 
