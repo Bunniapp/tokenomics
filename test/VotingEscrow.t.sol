@@ -209,6 +209,62 @@ contract VotingEscrowTest is Test, VyperDeployer {
         vm.stopPrank();
     }
 
+    function test_unlock_fuse(uint256 amount, uint256 lockTime) public {
+        vm.assume(amount > 0 && amount <= 1e27 && lockTime >= 7 days && lockTime <= 365 days);
+
+        uint256 unlockTime = block.timestamp + lockTime;
+
+        address locker = makeAddr("locker");
+
+        // add locker to smart wallet checker whitelist
+        vm.prank(admin);
+        smartWalletChecker.allowlistAddress(locker);
+
+        // create lock
+        token.mint(locker, amount);
+        vm.startPrank(locker);
+        token.approve(address(votingEscrow), amount);
+        votingEscrow.create_lock(amount, unlockTime);
+        vm.stopPrank();
+
+        // check result
+        assertEq(uint256(uint128(votingEscrow.locked(locker).amount)), amount);
+        assertEq(votingEscrow.locked(locker).end, unlockTime / (1 weeks) * (1 weeks));
+        assertEq(token.balanceOf(address(votingEscrow)), amount);
+
+        // try to withdraw
+        vm.startPrank(locker);
+        vm.expectRevert("The lock didn't expire or the unlock fuse has not been burnt");
+        votingEscrow.withdraw();
+        vm.stopPrank();
+
+        // burn unlock fuse
+        vm.prank(admin);
+        votingEscrow.burn_unlock_fuse();
+
+        // withdraw
+        vm.prank(locker);
+        votingEscrow.withdraw();
+
+        // check result
+        assertEq(token.balanceOf(address(votingEscrow)), 0);
+        assertEq(token.balanceOf(locker), amount);
+    }
+
+    function test_burn_unlock_fuse() public {
+        address locker = makeAddr("locker");
+
+        // locker can't burn unlock fuse
+        vm.prank(locker);
+        vm.expectRevert();
+        votingEscrow.burn_unlock_fuse();
+
+        // admin can burn unlock fuse
+        vm.prank(admin);
+        votingEscrow.burn_unlock_fuse();
+        assertTrue(votingEscrow.unlock_fuse());
+    }
+
     function airdropTo(address to, uint256 amount, uint256 unlockTime) external {
         token.mint(address(this), amount);
         token.approve(address(votingEscrow), amount);

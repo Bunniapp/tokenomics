@@ -37,6 +37,8 @@ interface IVotingEscrow {
     function slope_changes(uint256 arg0) external view returns (int128);
     function point_history(uint256 arg0) external view returns (Point memory);
     function allow_airdrop(address arg0, address arg1) external view returns (bool);
+    function unlock_fuse() external view returns (bool);
+    function burn_unlock_fuse() external;
 
     event Deposit(address indexed provider, uint256 value, uint256 indexed locktime, int128 eventType, uint256 ts);
 
@@ -47,6 +49,12 @@ interface IVotingEscrow {
     event NewPendingAdmin(address new_pending_admin);
 
     event NewAdmin(address new_admin);
+
+    event NewPendingSmartWalletChecker(address new_pending_smart_wallet_checker);
+
+    event NewSmartWalletChecker(address new_smart_wallet_checker);
+
+    event BurnUnlockFuse();
 
     event ApproveAirdrop(address indexed locker, address indexed airdropper);
 }

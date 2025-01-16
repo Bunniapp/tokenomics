@@ -102,6 +102,14 @@ event NewPendingAdmin:
 event NewAdmin:
     new_admin: address
 
+event NewPendingSmartWalletChecker:
+    new_pending_smart_wallet_checker: indexed(address)
+
+event NewSmartWalletChecker:
+    new_smart_wallet_checker: indexed(address)
+
+event BurnUnlockFuse: pass
+
 event ApproveAirdrop:
     locker: indexed(address)
     airdropper: indexed(address)
@@ -152,6 +160,8 @@ user_point_history: public(HashMap[address, Point[1000000000]])  # user -> Point
 user_point_epoch: public(HashMap[address, uint256])
 slope_changes: public(HashMap[uint256, int128])  # time -> signed slope change
 point_history: public(Point[100000000000000000000000000000])  # epoch -> unsigned point
+
+unlock_fuse: public(bool) # Can be permanently set to true to unlock all positions
 
 # !SECTION STORAGE
 
@@ -458,7 +468,7 @@ def withdraw():
     """
     msg_sender: address = LibMulticaller.sender_or_signer()
     _locked: LockedBalance = self.locked[msg_sender]
-    assert block.timestamp >= _locked.end, "The lock didn't expire"
+    assert (block.timestamp >= _locked.end) or self.unlock_fuse, "The lock didn't expire or the unlock fuse has not been burnt"
     value: uint256 = convert(_locked.amount, uint256)
 
     old_locked: LockedBalance = _locked
@@ -546,6 +556,8 @@ def commit_smart_wallet_checker(addr: address):
     assert msg.sender == self.admin
     self.future_smart_wallet_checker = addr
 
+    log NewPendingSmartWalletChecker(addr)
+
 
 @external
 def apply_smart_wallet_checker():
@@ -553,7 +565,21 @@ def apply_smart_wallet_checker():
     @notice Apply setting external contract to check approved smart contract wallets
     """
     assert msg.sender == self.admin
-    self.smart_wallet_checker = self.future_smart_wallet_checker
+    new_checker: address = self.future_smart_wallet_checker
+    self.smart_wallet_checker = new_checker
+
+    log NewSmartWalletChecker(new_checker)
+
+
+@external
+def burn_unlock_fuse():
+    """
+    @notice Burn unlock fuse permanently and allow all users to withdraw
+    """
+    assert msg.sender == self.admin
+    self.unlock_fuse = True
+
+    log BurnUnlockFuse()
 
 
 @external
