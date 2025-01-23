@@ -25,6 +25,9 @@ contract DeployScript is CREATE3Script {
         uint32 oracleSecs = vm.envUint("ORACLE_SECS").toUint32();
         uint32 oracleAgo = vm.envUint("ORACLE_AGO").toUint32();
         uint128 oracleMinPrice = vm.envUint("ORACLE_MIN_PRICE").toUint128();
+        uint256[] memory minterLimits = vm.envUint("BUNNI_MINTER_LIMITS", ",");
+        uint256[] memory burnerLimits = vm.envUint("BUNNI_BURNER_LIMITS", ",");
+        address[] memory bridges = vm.envAddress("BUNNI_BRIDGES", ",");
 
         (address currency0, address currency1) = address(paymentToken) < address(underlyingToken)
             ? (address(paymentToken), address(underlyingToken))
@@ -59,7 +62,10 @@ contract DeployScript is CREATE3Script {
         optionsToken = OptionsToken(
             create3.deploy(
                 getCreate3ContractSalt("oBUNNI"),
-                bytes.concat(type(OptionsToken).creationCode, abi.encode(owner, oracle, treasury))
+                bytes.concat(
+                    type(OptionsToken).creationCode,
+                    abi.encode(owner, oracle, treasury, minterLimits, burnerLimits, bridges)
+                )
             )
         );
 

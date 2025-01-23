@@ -150,7 +150,7 @@ contract OptionsTokenTest is Test {
             ORACLE_AGO,
             ORACLE_MIN_PRICE
         );
-        optionsToken = new OptionsToken(owner, oracle, treasury);
+        optionsToken = new OptionsToken(owner, oracle, treasury, new uint256[](0), new uint256[](0), new address[](0));
 
         // approve tokens
         paymentToken.approve(address(optionsToken), type(uint256).max);
@@ -168,7 +168,7 @@ contract OptionsTokenTest is Test {
         underlyingToken.mint(address(this), amount);
 
         // mint options tokens using the underlying tokens
-        optionsToken.mint(address(this), amount);
+        optionsToken.mintOptions(address(this), amount);
 
         // verify balance
         assertEqDecimal(optionsToken.balanceOf(address(this)), amount, 18);
@@ -179,7 +179,7 @@ contract OptionsTokenTest is Test {
 
         // mint options tokens
         underlyingToken.mint(address(this), amount);
-        optionsToken.mint(address(this), amount);
+        optionsToken.mintOptions(address(this), amount);
 
         // mint payment tokens
         uint256 expectedPaymentAmount =
@@ -206,7 +206,7 @@ contract OptionsTokenTest is Test {
 
         // mint options tokens
         underlyingToken.mint(address(this), amount);
-        optionsToken.mint(address(this), amount);
+        optionsToken.mintOptions(address(this), amount);
 
         // set minPrice such that the strike price is below the oracle's minPrice value
         uint128 newMinPrice = uint128(initialTwap * 2);
@@ -237,7 +237,7 @@ contract OptionsTokenTest is Test {
 
         // mint options tokens
         underlyingToken.mint(address(this), amount);
-        optionsToken.mint(address(this), amount);
+        optionsToken.mintOptions(address(this), amount);
 
         // mint payment tokens
         uint256 expectedPaymentAmount =
@@ -255,7 +255,7 @@ contract OptionsTokenTest is Test {
 
         // mint options tokens
         underlyingToken.mint(address(this), amount);
-        optionsToken.mint(address(this), amount);
+        optionsToken.mintOptions(address(this), amount);
 
         // mint payment tokens
         uint256 expectedPaymentAmount =

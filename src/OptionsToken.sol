@@ -4,12 +4,11 @@ pragma solidity ^0.8.13;
 import {LibMulticaller} from "multicaller/LibMulticaller.sol";
 
 import {ERC20} from "solady/tokens/ERC20.sol";
-import {Ownable} from "solady/auth/Ownable.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
+import {XERC20} from "./lib/XERC20.sol";
 import {IOracle} from "./interfaces/IOracle.sol";
-import {ERC20Multicaller} from "./lib/ERC20Multicaller.sol";
 
 /// @title Options Token
 /// @author zefram.eth
@@ -17,7 +16,7 @@ import {ERC20Multicaller} from "./lib/ERC20Multicaller.sol";
 /// at an oracle-specified rate. Similar to call options but with a variable strike
 /// price that's always at a certain discount to the market price.
 /// @dev Assumes the underlying token and the payment token both use 18 decimals.
-contract OptionsToken is ERC20Multicaller, Ownable {
+contract OptionsToken is XERC20 {
     /// -----------------------------------------------------------------------
     /// Library usage
     /// -----------------------------------------------------------------------
@@ -29,6 +28,7 @@ contract OptionsToken is ERC20Multicaller, Ownable {
     /// Errors
     /// -----------------------------------------------------------------------
 
+    error OptionsToken__InvalidLength();
     error OptionsToken__PastDeadline();
     error OptionsToken__InvalidOracle();
     error OptionsToken__SlippageTooHigh();
@@ -67,7 +67,14 @@ contract OptionsToken is ERC20Multicaller, Ownable {
     /// Constructor
     /// -----------------------------------------------------------------------
 
-    constructor(address owner_, IOracle oracle_, address treasury_) {
+    constructor(
+        address owner_,
+        IOracle oracle_,
+        address treasury_,
+        uint256[] memory _minterLimits,
+        uint256[] memory _burnerLimits,
+        address[] memory _bridges
+    ) XERC20(owner_) {
         paymentToken = oracle_.paymentToken();
         underlyingToken = oracle_.underlyingToken();
 
@@ -82,7 +89,14 @@ contract OptionsToken is ERC20Multicaller, Ownable {
         emit SetOracle(oracle_);
         emit SetTreasury(treasury_);
 
-        _initializeOwner(owner_);
+        uint256 _bridgesLength = _bridges.length;
+        if (_minterLimits.length != _bridgesLength || _burnerLimits.length != _bridgesLength) {
+            revert OptionsToken__InvalidLength();
+        }
+
+        for (uint256 i; i < _bridgesLength; ++i) {
+            _setLimits(_bridges[i], _minterLimits[i], _burnerLimits[i]);
+        }
     }
 
     /// -----------------------------------------------------------------------
@@ -92,7 +106,7 @@ contract OptionsToken is ERC20Multicaller, Ownable {
     /// @notice Mints options tokens by taking underlying tokens from the sender.
     /// @param to The address that will receive the minted options tokens
     /// @param amount The amount of options tokens that will be minted
-    function mint(address to, uint256 amount) external {
+    function mintOptions(address to, uint256 amount) external {
         /// -----------------------------------------------------------------------
         /// State updates
         /// -----------------------------------------------------------------------
