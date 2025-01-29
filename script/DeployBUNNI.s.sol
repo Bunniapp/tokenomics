@@ -7,7 +7,7 @@ import {BUNNI} from "../src/BUNNI.sol";
 contract DeployScript is CREATE3Script {
     constructor() CREATE3Script(vm.envString("VERSION")) {}
 
-    function run() external returns (BUNNI bunni) {
+    function run() external returns (BUNNI bunni, bytes32 salt) {
         uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
 
         address owner = vm.envAddress("OWNER");
@@ -15,12 +15,13 @@ contract DeployScript is CREATE3Script {
         uint256[] memory burnerLimits = vm.envUint("BUNNI_BURNER_LIMITS", ",");
         address[] memory bridges = vm.envAddress("BUNNI_BRIDGES", ",");
 
+        salt = getCreate3SaltFromEnv("BUNNI");
+
         vm.startBroadcast(deployerPrivateKey);
 
         bunni = BUNNI(
             create3.deploy(
-                getCreate3ContractSalt("BUNNI"),
-                bytes.concat(type(BUNNI).creationCode, abi.encode(owner, minterLimits, burnerLimits, bridges))
+                salt, bytes.concat(type(BUNNI).creationCode, abi.encode(owner, minterLimits, burnerLimits, bridges))
             )
         );
 

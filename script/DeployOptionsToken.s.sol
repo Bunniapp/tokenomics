@@ -13,12 +13,15 @@ contract DeployScript is CREATE3Script {
 
     constructor() CREATE3Script(vm.envString("VERSION")) {}
 
-    function run() external returns (OptionsToken optionsToken, BunniHookOracle oracle) {
+    function run()
+        external
+        returns (OptionsToken optionsToken, BunniHookOracle oracle, bytes32 optionsSalt, bytes32 oracleSalt)
+    {
         uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
 
-        address bunniHook = vm.envAddress("BUNNI_HOOK");
+        address bunniHook = getCreate3ContractFromEnvSalt("BunniHook");
         address paymentToken = vm.envAddress("PAYMENT_TOKEN");
-        address underlyingToken = getCreate3Contract("BUNNI");
+        address underlyingToken = getCreate3ContractFromEnvSalt("BUNNI");
         uint24 fee = vm.envUint("ORACLE_POOLKEY_FEE").toUint24();
         int24 tickSpacing = vm.envUint("ORACLE_POOLKEY_TICK_SPACING").toInt256().toInt24();
         uint16 oracleMultiplier = vm.envUint("ORACLE_MULTIPLIER").toUint16();
@@ -28,6 +31,9 @@ contract DeployScript is CREATE3Script {
         uint256[] memory minterLimits = vm.envUint("BUNNI_MINTER_LIMITS", ",");
         uint256[] memory burnerLimits = vm.envUint("BUNNI_BURNER_LIMITS", ",");
         address[] memory bridges = vm.envAddress("BUNNI_BRIDGES", ",");
+
+        optionsSalt = getCreate3SaltFromEnv("oBUNNI");
+        oracleSalt = getCreate3SaltFromEnv("BunniHookOracle");
 
         (address currency0, address currency1) = address(paymentToken) < address(underlyingToken)
             ? (address(paymentToken), address(underlyingToken))
@@ -42,7 +48,7 @@ contract DeployScript is CREATE3Script {
 
         oracle = BunniHookOracle(
             create3.deploy(
-                getCreate3ContractSalt("BunniHookOracle"),
+                oracleSalt,
                 bytes.concat(
                     type(BunniHookOracle).creationCode,
                     abi.encode(
@@ -61,7 +67,7 @@ contract DeployScript is CREATE3Script {
         );
         optionsToken = OptionsToken(
             create3.deploy(
-                getCreate3ContractSalt("oBUNNI"),
+                optionsSalt,
                 bytes.concat(
                     type(OptionsToken).creationCode,
                     abi.encode(owner, oracle, treasury, minterLimits, burnerLimits, bridges)

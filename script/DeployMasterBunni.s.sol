@@ -8,13 +8,14 @@ import {MasterBunni} from "../src/MasterBunni.sol";
 contract DeployScript is CREATE3Script {
     constructor() CREATE3Script(vm.envString("VERSION")) {}
 
-    function run() external returns (IMasterBunni masterBunni) {
+    function run() external returns (IMasterBunni masterBunni, bytes32 salt) {
         uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
+
+        salt = getCreate3SaltFromEnv("MasterBunni");
 
         vm.startBroadcast(deployerPrivateKey);
 
-        masterBunni =
-            IMasterBunni(create3.deploy(getCreate3ContractSalt("MasterBunni"), type(MasterBunni).creationCode));
+        masterBunni = IMasterBunni(create3.deploy(salt, type(MasterBunni).creationCode));
 
         vm.stopBroadcast();
     }

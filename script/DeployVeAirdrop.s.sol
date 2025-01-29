@@ -7,20 +7,22 @@ import {VeAirdrop} from "../src/VeAirdrop.sol";
 contract DeployScript is CREATE3Script {
     constructor() CREATE3Script(vm.envString("VERSION")) {}
 
-    function run() external returns (VeAirdrop veAirdrop) {
+    function run() external returns (VeAirdrop veAirdrop, bytes32 salt) {
         uint256 deployerPrivateKey = uint256(vm.envBytes32("PRIVATE_KEY"));
 
         bytes32 merkleRoot = vm.envBytes32("VEAIRDROP_MERKLE_ROOT");
         uint256 startTime = vm.envUint("VEAIRDROP_START_TIME");
         uint256 endTime = vm.envUint("VEAIRDROP_END_TIME");
-        address votingEscrow = getCreate3Contract("veBUNNI");
+        address votingEscrow = getCreate3ContractFromEnvSalt("veBUNNI");
         address owner = vm.envAddress("OWNER");
+
+        salt = getCreate3SaltFromEnv("VeAirdrop");
 
         vm.startBroadcast(deployerPrivateKey);
 
         veAirdrop = VeAirdrop(
             create3.deploy(
-                getCreate3ContractSalt("VeAirdrop-veBUNNI"),
+                salt,
                 bytes.concat(
                     type(VeAirdrop).creationCode, abi.encode(merkleRoot, startTime, endTime, votingEscrow, owner)
                 )
