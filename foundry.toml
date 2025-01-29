@@ -13,8 +13,12 @@ verbosity = 4
 
 [rpc_endpoints]
 mainnet = "${RPC_URL_MAINNET}"
+arbitrum = "${RPC_URL_ARBITRUM}"
+base = "${RPC_URL_BASE}"
 sepolia = "${RPC_URL_SEPOLIA}"
 
 [etherscan]
 mainnet = {key = "${ETHERSCAN_KEY}"}
+arbitrum = {key = "${ARBISCAN_KEY}", url = "https://api.arbiscan.io/api"}
+base = {key = "${BASESCAN_KEY}", url = "https://api.basescan.org/api"}
 sepolia = {key = "${ETHERSCAN_KEY}", url = "https://api-sepolia.etherscan.io/api"}
