@@ -9,6 +9,7 @@ import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 
 import {XERC20} from "./lib/XERC20.sol";
 import {IOracle} from "./interfaces/IOracle.sol";
+import {ReentrancyGuard} from "./lib/ReentrancyGuard.sol";
 
 /// @title Options Token
 /// @author zefram.eth
@@ -16,7 +17,7 @@ import {IOracle} from "./interfaces/IOracle.sol";
 /// at an oracle-specified rate. Similar to call options but with a variable strike
 /// price that's always at a certain discount to the market price.
 /// @dev Assumes the underlying token and the payment token both use 18 decimals.
-contract OptionsToken is XERC20 {
+contract OptionsToken is XERC20, ReentrancyGuard {
     /// -----------------------------------------------------------------------
     /// Library usage
     /// -----------------------------------------------------------------------
@@ -46,7 +47,8 @@ contract OptionsToken is XERC20 {
     /// Immutable parameters
     /// -----------------------------------------------------------------------
 
-    /// @notice The token paid by the options token holder during redemption
+    /// @notice The token paid by the options token holder during redemption. Set to
+    /// address(0) if the payment token is ETH.
     address public immutable paymentToken;
 
     /// @notice The underlying token purchased during redemption
@@ -79,7 +81,10 @@ contract OptionsToken is XERC20 {
         underlyingToken = oracle_.underlyingToken();
 
         // validate token decimals
-        if (ERC20(paymentToken).decimals() != 18 || ERC20(underlyingToken).decimals() != 18) {
+        if (
+            (paymentToken != address(0) && ERC20(paymentToken).decimals() != 18)
+                || ERC20(underlyingToken).decimals() != 18
+        ) {
             revert OptionsToken__InvalidTokenDecimals();
         }
 
@@ -106,7 +111,7 @@ contract OptionsToken is XERC20 {
     /// @notice Mints options tokens by taking underlying tokens from the sender.
     /// @param to The address that will receive the minted options tokens
     /// @param amount The amount of options tokens that will be minted
-    function mintOptions(address to, uint256 amount) external {
+    function mintOptions(address to, uint256 amount) external nonReentrant {
         /// -----------------------------------------------------------------------
         /// State updates
         /// -----------------------------------------------------------------------
@@ -135,6 +140,8 @@ contract OptionsToken is XERC20 {
     /// @return paymentAmount The amount paid to the treasury to purchase the underlying tokens
     function exercise(uint256 amount, uint256 maxPaymentAmount, address recipient)
         external
+        payable
+        nonReentrant
         returns (uint256 paymentAmount)
     {
         return _exercise(amount, maxPaymentAmount, recipient);
@@ -149,6 +156,8 @@ contract OptionsToken is XERC20 {
     /// @return paymentAmount The amount paid to the treasury to purchase the underlying tokens
     function exercise(uint256 amount, uint256 maxPaymentAmount, address recipient, uint256 deadline)
         external
+        payable
+        nonReentrant
         returns (uint256 paymentAmount)
     {
         if (block.timestamp > deadline) revert OptionsToken__PastDeadline();
@@ -207,10 +216,24 @@ contract OptionsToken is XERC20 {
         address msgSender = LibMulticaller.senderOrSigner();
         _burn(msgSender, amount);
 
-        // transfer payment tokens from msgSender to the treasury
+        // compute payment amount
         paymentAmount = amount.mulWadUp(oracle.getPrice());
         if (paymentAmount > maxPaymentAmount) revert OptionsToken__SlippageTooHigh();
-        paymentToken.safeTransferFrom2(msgSender, treasury, paymentAmount);
+
+        // transfer payment tokens from msgSender to the treasury
+        if (paymentToken == address(0)) {
+            // ETH transfer
+            treasury.safeTransferETH(paymentAmount);
+
+            // refund msgSender
+            uint256 refund = msg.value - paymentAmount;
+            if (refund != 0) {
+                msgSender.forceSafeTransferETH(refund);
+            }
+        } else {
+            // ERC20 transfer
+            paymentToken.safeTransferFrom2(msgSender, treasury, paymentAmount);
+        }
 
         // transfer underlying tokens to recipient
         underlyingToken.safeTransfer(recipient, amount);

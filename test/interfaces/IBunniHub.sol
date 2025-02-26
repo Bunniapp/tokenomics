@@ -10,6 +10,7 @@ interface IBunniHub {
     /// @param tickSpacing The tick spacing of the Uniswap V4 pool
     /// @param twapSecondsAgo The TWAP time period to use for the liquidity density function
     /// @param liquidityDensityFunction The liquidity density function to use
+    /// @param ldfType The type of LDF. See LDFType.sol for details.
     /// @param hooklet The hooklet to use for the Bunni pool. If it's address(0), then a hooklet is not used.
     /// @param ldfParams The parameters for the liquidity density function
     /// @param hooks The hooks to use for the Uniswap V4 pool
@@ -35,7 +36,7 @@ interface IBunniHub {
         uint24 twapSecondsAgo;
         address liquidityDensityFunction;
         address hooklet;
-        bool statefulLdf;
+        uint8 ldfType;
         bytes32 ldfParams;
         IBunniHook hooks;
         bytes hookParams;

@@ -27,7 +27,8 @@ contract OptionsTokenTest is Test {
     uint24 internal constant FEE_MAX = 0.1e6;
     uint24 internal constant FEE_QUADRATIC_MULTIPLIER = 0.5e6;
     uint24 internal constant FEE_TWAP_SECONDS_AGO = 30 minutes;
-    uint24 internal constant SURGE_FEE = 0.1e6;
+    uint24 internal constant POOL_MAX_AMAMM_FEE = 0.05e6; // 5%
+    uint48 internal constant MIN_RENT_MULTIPLIER = 1e10;
     uint16 internal constant SURGE_HALFLIFE = 1 minutes;
     uint16 internal constant SURGE_AUTOSTART_TIME = 2 minutes;
     uint16 internal constant VAULT_SURGE_THRESHOLD_0 = 1e4; // 0.01% change in share price
@@ -46,32 +47,28 @@ contract OptionsTokenTest is Test {
     uint256 internal constant WAD = 1e18;
     uint256 internal constant Q96 = 0x1000000000000000000000000;
 
-    // sepolia deployments
-    IBunniHub constant bunniHub = IBunniHub(0x9fcB8DbbB93F908f0ff2f9B425594A0511dd71c4);
-    IBunniHook constant bunniHook = IBunniHook(0x56aafc3fF6B436Eb171615acb9fb723f025D1888);
-    address constant carpetedDoubleGeometricLDF = 0xdAC2a807Fe819777Eb708CEC92d37B8f1914CE86;
+    // mainnet deployments
+    IBunniHub constant bunniHub = IBunniHub(0x000000DCeb71f3107909b1b748424349bfde5493);
+    IBunniHook constant bunniHook = IBunniHook(0x0010d0D5dB05933Fa0D9F7038D365E1541a41888);
+    address constant carpetedDoubleGeometricLDF = 0x0000007014931f1ECD91Ed2D0f461Cc924Db21Ed;
 
     address owner;
     address treasury;
 
     OptionsToken optionsToken;
     BunniHookOracle oracle;
-    ERC20Mock paymentToken;
+    address paymentToken;
     ERC20Mock underlyingToken;
     uint256 initialTwap;
 
-    modifier onlyChain(string memory chain) {
-        vm.assume(getChain(chain).chainId == block.chainid);
+    modifier setUpContracts(bool useETHPaymentToken) {
+        _setUpContracts(useETHPaymentToken);
         _;
     }
 
-    function setUp() public onlyChain("sepolia") {
-        // set up accounts
-        owner = makeAddr("owner");
-        treasury = makeAddr("treasury");
-
+    function _setUpContracts(bool useETHPaymentToken) internal {
         // deploy tokens
-        paymentToken = new ERC20Mock();
+        paymentToken = useETHPaymentToken ? address(0) : address(new ERC20Mock());
         underlyingToken = new ERC20Mock();
 
         // deploy Bunni pool
@@ -96,7 +93,7 @@ contract OptionsTokenTest is Test {
             FEE_MAX,
             FEE_QUADRATIC_MULTIPLIER,
             FEE_TWAP_SECONDS_AGO,
-            SURGE_FEE,
+            POOL_MAX_AMAMM_FEE,
             SURGE_HALFLIFE,
             SURGE_AUTOSTART_TIME,
             VAULT_SURGE_THRESHOLD_0,
@@ -106,7 +103,8 @@ contract OptionsTokenTest is Test {
             REBALANCE_TWAP_SECONDS_AGO,
             REBALANCE_ORDER_TTL,
             true, // amAmmEnabled
-            ORACLE_MIN_INTERVAL
+            ORACLE_MIN_INTERVAL,
+            MIN_RENT_MULTIPLIER
         );
         uint160 sqrtPriceX96 = INITIAL_TICK.getSqrtPriceAtTick();
         (, PoolKey memory key) = bunniHub.deployBunniToken(
@@ -117,7 +115,7 @@ contract OptionsTokenTest is Test {
                 twapSecondsAgo: uint24(ORACLE_SECS + ORACLE_AGO),
                 liquidityDensityFunction: carpetedDoubleGeometricLDF,
                 hooklet: address(0),
-                statefulLdf: false,
+                ldfType: uint8(2),
                 ldfParams: ldfParams,
                 hooks: bunniHook,
                 hookParams: hookParams,
@@ -153,17 +151,25 @@ contract OptionsTokenTest is Test {
         optionsToken = new OptionsToken(owner, oracle, treasury, new uint256[](0), new uint256[](0), new address[](0));
 
         // approve tokens
-        paymentToken.approve(address(optionsToken), type(uint256).max);
+        if (paymentToken != address(0)) {
+            ERC20Mock(paymentToken).approve(address(optionsToken), type(uint256).max);
+        }
         underlyingToken.approve(address(optionsToken), type(uint256).max);
 
         // compute initial TWAP value
         int24 arithmeticMeanTick = INITIAL_TICK;
         arithmeticMeanTick = address(paymentToken) == key.currency1 ? arithmeticMeanTick : -arithmeticMeanTick;
-        uint256 sqrtPriceWad = sqrtPriceX96.mulDiv(WAD, Q96);
+        uint256 sqrtPriceWad = arithmeticMeanTick.getSqrtPriceAtTick().mulDiv(WAD, Q96);
         initialTwap = sqrtPriceWad.mulWad(sqrtPriceWad);
     }
 
-    function test_mint(uint256 amount) public {
+    function setUp() public {
+        // set up accounts
+        owner = makeAddr("owner");
+        treasury = makeAddr("treasury");
+    }
+
+    function test_mint(uint256 amount, bool useETHPaymentToken) public setUpContracts(useETHPaymentToken) {
         // mint some underlying tokens
         underlyingToken.mint(address(this), amount);
 
@@ -174,7 +180,10 @@ contract OptionsTokenTest is Test {
         assertEqDecimal(optionsToken.balanceOf(address(this)), amount, 18);
     }
 
-    function test_exerciseHappyPath(uint256 amount, address recipient) public {
+    function test_exerciseHappyPath(uint256 amount, address recipient, bool useETHPaymentToken)
+        public
+        setUpContracts(useETHPaymentToken)
+    {
         amount = bound(amount, 0, MAX_SUPPLY);
 
         // mint options tokens
@@ -182,26 +191,32 @@ contract OptionsTokenTest is Test {
         optionsToken.mintOptions(address(this), amount);
 
         // mint payment tokens
+        uint256 beforePaymentTokenBalance = _balanceOf(paymentToken, address(this));
         uint256 expectedPaymentAmount =
             amount.mulWadUp(initialTwap.mulDivUp(ORACLE_MULTIPLIER, ORACLE_MULTIPLIER_DENOM));
-        paymentToken.mint(address(this), expectedPaymentAmount);
+        _mint(paymentToken, expectedPaymentAmount);
 
         // exercise options tokens
-        uint256 actualPaymentAmount = optionsToken.exercise(amount, expectedPaymentAmount, recipient);
+        uint256 actualPaymentAmount = optionsToken.exercise{
+            value: paymentToken == address(0) ? expectedPaymentAmount : 0
+        }(amount, expectedPaymentAmount, recipient);
 
         // verify options tokens were transferred
         assertEqDecimal(optionsToken.balanceOf(address(this)), 0, 18, "user still has options tokens");
         assertEqDecimal(optionsToken.totalSupply(), 0, 18, "total supply not 0");
 
         // verify payment tokens were transferred
-        assertEqDecimal(paymentToken.balanceOf(address(this)), 0, 18, "user still has payment tokens");
+        assertEqDecimal(_balanceOf(paymentToken, address(this)), beforePaymentTokenBalance, 18, "user didn't pay");
         assertEqDecimal(
-            paymentToken.balanceOf(treasury), expectedPaymentAmount, 18, "treasury didn't receive payment tokens"
+            _balanceOf(paymentToken, treasury), expectedPaymentAmount, 18, "treasury didn't receive payment tokens"
         );
         assertEqDecimal(actualPaymentAmount, expectedPaymentAmount, 18, "exercise returned wrong value");
     }
 
-    function test_exerciseMinPrice(uint256 amount, address recipient) public {
+    function test_exerciseMinPrice(uint256 amount, address recipient, bool useETHPaymentToken)
+        public
+        setUpContracts(useETHPaymentToken)
+    {
         amount = bound(amount, 0, MAX_SUPPLY);
 
         // mint options tokens
@@ -214,25 +229,70 @@ contract OptionsTokenTest is Test {
         oracle.setParams(ORACLE_MULTIPLIER, ORACLE_SECS, ORACLE_AGO, newMinPrice);
 
         // mint payment tokens
+        uint256 beforePaymentTokenBalance = _balanceOf(paymentToken, address(this));
         uint256 expectedPaymentAmount = amount.mulWadUp(newMinPrice);
-        paymentToken.mint(address(this), expectedPaymentAmount);
+        _mint(paymentToken, expectedPaymentAmount);
 
         // exercise options tokens
-        uint256 actualPaymentAmount = optionsToken.exercise(amount, expectedPaymentAmount, recipient);
+        uint256 actualPaymentAmount = optionsToken.exercise{
+            value: paymentToken == address(0) ? expectedPaymentAmount : 0
+        }(amount, expectedPaymentAmount, recipient);
 
         // verify options tokens were transferred
         assertEqDecimal(optionsToken.balanceOf(address(this)), 0, 18, "user still has options tokens");
         assertEqDecimal(optionsToken.totalSupply(), 0, 18, "total supply not 0");
 
         // verify payment tokens were transferred
-        assertEqDecimal(paymentToken.balanceOf(address(this)), 0, 18, "user still has payment tokens");
+        assertEqDecimal(_balanceOf(paymentToken, address(this)), beforePaymentTokenBalance, 18, "user didn't pay");
         assertEqDecimal(
-            paymentToken.balanceOf(treasury), expectedPaymentAmount, 18, "treasury didn't receive payment tokens"
+            _balanceOf(paymentToken, treasury), expectedPaymentAmount, 18, "treasury didn't receive payment tokens"
         );
         assertEqDecimal(actualPaymentAmount, expectedPaymentAmount, 18, "exercise returned wrong value");
     }
 
-    function test_exerciseHighSlippage(uint256 amount, address recipient) public {
+    function test_exerciseRefundETH(uint256 amount, address recipient, uint256 additionalPayment)
+        public
+        setUpContracts(true)
+    {
+        amount = bound(amount, 0, MAX_SUPPLY);
+        additionalPayment = bound(additionalPayment, 0, 100 ether);
+
+        // mint options tokens
+        underlyingToken.mint(address(this), amount);
+        optionsToken.mintOptions(address(this), amount);
+
+        // mint payment tokens
+        uint256 beforePaymentTokenBalance = _balanceOf(paymentToken, address(this));
+        uint256 expectedPaymentAmount =
+            amount.mulWadUp(initialTwap.mulDivUp(ORACLE_MULTIPLIER, ORACLE_MULTIPLIER_DENOM));
+        _mint(paymentToken, expectedPaymentAmount + additionalPayment);
+
+        // exercise options tokens
+        uint256 actualPaymentAmount = optionsToken.exercise{
+            value: paymentToken == address(0) ? expectedPaymentAmount + additionalPayment : 0
+        }(amount, expectedPaymentAmount, recipient);
+
+        // verify options tokens were transferred
+        assertEqDecimal(optionsToken.balanceOf(address(this)), 0, 18, "user still has options tokens");
+        assertEqDecimal(optionsToken.totalSupply(), 0, 18, "total supply not 0");
+
+        // verify payment tokens were transferred and refund was given to user
+        assertEqDecimal(
+            _balanceOf(paymentToken, address(this)),
+            beforePaymentTokenBalance + additionalPayment,
+            18,
+            "user didn't receive correct refund"
+        );
+        assertEqDecimal(
+            _balanceOf(paymentToken, treasury), expectedPaymentAmount, 18, "treasury didn't receive payment tokens"
+        );
+        assertEqDecimal(actualPaymentAmount, expectedPaymentAmount, 18, "exercise returned wrong value");
+    }
+
+    function test_exerciseHighSlippage(uint256 amount, address recipient, bool useETHPaymentToken)
+        public
+        setUpContracts(useETHPaymentToken)
+    {
         amount = bound(amount, 1, MAX_SUPPLY);
 
         // mint options tokens
@@ -242,14 +302,19 @@ contract OptionsTokenTest is Test {
         // mint payment tokens
         uint256 expectedPaymentAmount =
             amount.mulWadUp(initialTwap.mulDivUp(ORACLE_MULTIPLIER, ORACLE_MULTIPLIER_DENOM));
-        paymentToken.mint(address(this), expectedPaymentAmount);
+        _mint(paymentToken, expectedPaymentAmount);
 
         // exercise options tokens which should fail
         vm.expectRevert(bytes4(keccak256("OptionsToken__SlippageTooHigh()")));
-        optionsToken.exercise(amount, expectedPaymentAmount - 1, recipient);
+        optionsToken.exercise{value: paymentToken == address(0) ? expectedPaymentAmount : 0}(
+            amount, expectedPaymentAmount - 1, recipient
+        );
     }
 
-    function test_exercisePastDeadline(uint256 amount, address recipient, uint256 deadline) public {
+    function test_exercisePastDeadline(uint256 amount, address recipient, uint256 deadline, bool useETHPaymentToken)
+        public
+        setUpContracts(useETHPaymentToken)
+    {
         amount = bound(amount, 0, MAX_SUPPLY);
         deadline = bound(deadline, 0, block.timestamp - 1);
 
@@ -260,14 +325,16 @@ contract OptionsTokenTest is Test {
         // mint payment tokens
         uint256 expectedPaymentAmount =
             amount.mulWadUp(initialTwap.mulDivUp(ORACLE_MULTIPLIER, ORACLE_MULTIPLIER_DENOM));
-        paymentToken.mint(address(this), expectedPaymentAmount);
+        _mint(paymentToken, expectedPaymentAmount);
 
         // exercise options tokens
         vm.expectRevert(bytes4(keccak256("OptionsToken__PastDeadline()")));
-        optionsToken.exercise(amount, expectedPaymentAmount, recipient, deadline);
+        optionsToken.exercise{value: paymentToken == address(0) ? expectedPaymentAmount : 0}(
+            amount, expectedPaymentAmount, recipient, deadline
+        );
     }
 
-    function test_setOracle_invalidOracle() public {
+    function test_setOracle_invalidOracle(bool useETHPaymentToken) public setUpContracts(useETHPaymentToken) {
         PoolKey memory key = oracle.getPoolKey();
         key.currency0 = address(paymentToken);
         key.currency1 = address(paymentToken); // this is different from the existing oracle
@@ -287,5 +354,21 @@ contract OptionsTokenTest is Test {
         vm.expectRevert(OptionsToken.OptionsToken__InvalidOracle.selector);
         optionsToken.setOracle(invalidOracle);
         vm.stopPrank();
+    }
+
+    function _mint(address token, uint256 amount) internal {
+        if (token == address(0)) {
+            vm.deal(address(this), address(this).balance + amount);
+        } else {
+            ERC20Mock(token).mint(address(this), amount);
+        }
+    }
+
+    function _balanceOf(address token, address account) internal view returns (uint256) {
+        if (token == address(0)) {
+            return account.balance;
+        } else {
+            return ERC20Mock(token).balanceOf(account);
+        }
     }
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.13;
 
+import {LibString} from "solady/utils/LibString.sol";
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 
 import {CREATE3Script} from "./base/CREATE3Script.sol";
@@ -10,6 +11,7 @@ import {PoolKey} from "../src/external/IBunniHook.sol";
 
 contract DeployScript is CREATE3Script {
     using SafeCastLib for *;
+    using LibString for uint256;
 
     constructor() CREATE3Script(vm.envString("VERSION")) {}
 
@@ -22,8 +24,9 @@ contract DeployScript is CREATE3Script {
         address bunniHook = getCreate3ContractFromEnvSalt("BunniHook");
         address paymentToken = vm.envAddress("PAYMENT_TOKEN");
         address underlyingToken = getCreate3ContractFromEnvSalt("BUNNI");
-        uint24 fee = vm.envUint("ORACLE_POOLKEY_FEE").toUint24();
-        int24 tickSpacing = vm.envUint("ORACLE_POOLKEY_TICK_SPACING").toInt256().toInt24();
+        uint24 fee = vm.envUint(string.concat("ORACLE_POOLKEY_FEE_", block.chainid.toString())).toUint24();
+        int24 tickSpacing =
+            vm.envUint(string.concat("ORACLE_POOLKEY_TICK_SPACING_", block.chainid.toString())).toInt256().toInt24();
         uint16 oracleMultiplier = vm.envUint("ORACLE_MULTIPLIER").toUint16();
         uint32 oracleSecs = vm.envUint("ORACLE_SECS").toUint32();
         uint32 oracleAgo = vm.envUint("ORACLE_AGO").toUint32();
