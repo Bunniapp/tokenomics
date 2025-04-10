@@ -17,6 +17,7 @@ arbitrum = "${RPC_URL_ARBITRUM}"
 base = "${RPC_URL_BASE}"
 sepolia = "${RPC_URL_SEPOLIA}"
 unichain = "${RPC_URL_UNICHAIN}"
+bsc = "${RPC_URL_BSC}"
 
 [etherscan]
 mainnet = {key = "${ETHERSCAN_KEY}"}
@@ -24,3 +25,4 @@ arbitrum = {key = "${ARBISCAN_KEY}", url = "https://api.arbiscan.io/api"}
 base = {key = "${BASESCAN_KEY}", url = "https://api.basescan.org/api"}
 sepolia = {key = "${ETHERSCAN_KEY}", url = "https://api-sepolia.etherscan.io/api"}
 unichain = {key = "${UNISCAN_KEY}", url = "https://api.uniscan.xyz/api"}
+bsc = {key = "${BSCSCAN_KEY}", url = "https://api.bscscan.com/api"}
